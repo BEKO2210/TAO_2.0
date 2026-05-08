@@ -62,6 +62,20 @@ class <Pascal>Agent:
 
 `run` should **never** raise to the orchestrator — wrap failures in `{"status": "error", "reason": ...}`.
 
+### Return-shape convention
+
+`run()` returns a **flat dict** with at least a top-level `status` key. Agent-specific report fields sit alongside it. Do **not** wrap the payload in a `result` key — the orchestrator already wraps the whole return value under `output`, and carries the agent's per-call `status` up as `agent_result_status` for easy access.
+
+```python
+# Good: flat, with status — matches the existing src/agents/ majority.
+return {"status": "complete", "verdict": "PROCEED", "findings": [], "timestamp": time.time()}
+
+# Avoid: nesting under result wraps once more on top of the orchestrator wrap.
+return {"status": "ok", "agent": AGENT_NAME, "result": {"verdict": "PROCEED", ...}}
+```
+
+`get_status()` reports the agent's **running state** (idle / running / error / complete) — that's a different thing from the per-call status of any single `run()`.
+
 ## Scaffolding new modules — use Hygen, do not hand-roll
 
 Hygen templates live in `_templates/` and enforce the conventions above.

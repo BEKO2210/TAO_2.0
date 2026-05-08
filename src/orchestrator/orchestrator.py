@@ -219,6 +219,15 @@ class SwarmOrchestrator:
             )
             output = agent.run(task)
 
+            # Lift the agent's internal per-call ``status`` field (e.g.
+            # "complete", "snapshot", "plan_created", "INSUFFICIENT_DATA",
+            # "error") into a top-level ``agent_result_status`` so callers
+            # don't have to dig into ``output`` and don't have to handle
+            # the case where some agents include it and some don't.
+            agent_result_status = (
+                output.get("status") if isinstance(output, dict) else None
+            )
+
             result = {
                 "status": "success",
                 "task_type": task_type,
@@ -227,6 +236,7 @@ class SwarmOrchestrator:
                 "executed": True,
                 "output": output,
                 "agent_status": agent.get_status(),
+                "agent_result_status": agent_result_status,
                 "timestamp": time.time(),
             }
 
