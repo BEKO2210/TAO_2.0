@@ -134,7 +134,7 @@ class SwarmOrchestrator:
                 "status": "error",
                 "error": f"Validation failed: {validation['reason']}",
                 "task_type": task_type,
-                "classification": ApprovalGate.SAFE,
+                "classification": ApprovalGate.SAFE.value,
                 "executed": False,
             }
             self._log_event(
@@ -154,18 +154,18 @@ class SwarmOrchestrator:
         if not can_execute:
             logger.warning(
                 "Task '%s' classified as %s - returning as plan only",
-                task_type, classification,
+                task_type, classification.value,
             )
             result = {
                 "status": "blocked",
                 "task_type": task_type,
                 "agent_name": None,
-                "classification": classification,
+                "classification": classification.value,
                 "executed": False,
                 "output": {
                     "plan": task,
                     "note": (
-                        f"This is a {classification} action. It requires "
+                        f"This is a {classification.value} action. It requires "
                         "manual approval. Review the plan carefully before "
                         "executing with safety_override=True."
                     ),
@@ -175,7 +175,7 @@ class SwarmOrchestrator:
             self._log_event(
                 event_type="task_blocked",
                 task_type=task_type,
-                classification=classification,
+                classification=classification.value,
             )
             return result
 
@@ -188,7 +188,7 @@ class SwarmOrchestrator:
                 "status": "error",
                 "error": str(e),
                 "task_type": task_type,
-                "classification": classification,
+                "classification": classification.value,
                 "executed": False,
             }
 
@@ -208,14 +208,14 @@ class SwarmOrchestrator:
                     "error": f"Agent validation: {error_msg}",
                     "task_type": task_type,
                     "agent_name": agent_name,
-                    "classification": classification,
+                    "classification": classification.value,
                     "executed": False,
                 }
 
             # Run the agent
             logger.info(
                 "Executing task via %s (classification=%s)",
-                agent_name, classification,
+                agent_name, classification.value,
             )
             output = agent.run(task)
 
@@ -223,7 +223,7 @@ class SwarmOrchestrator:
                 "status": "success",
                 "task_type": task_type,
                 "agent_name": agent_name,
-                "classification": classification,
+                "classification": classification.value,
                 "executed": True,
                 "output": output,
                 "agent_status": agent.get_status(),
@@ -234,7 +234,7 @@ class SwarmOrchestrator:
                 event_type="task_complete",
                 task_type=task_type,
                 agent_name=agent_name,
-                classification=classification,
+                classification=classification.value,
                 status="success",
             )
 
@@ -245,7 +245,7 @@ class SwarmOrchestrator:
                 "error": str(e),
                 "task_type": task_type,
                 "agent_name": agent_name,
-                "classification": classification,
+                "classification": classification.value,
                 "executed": False,
             }
             self._log_event(

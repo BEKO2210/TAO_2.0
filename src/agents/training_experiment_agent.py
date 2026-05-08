@@ -169,7 +169,7 @@ class TrainingExperimentAgent:
                 "step": 3,
                 "title": "Training",
                 "description": f"Train for {epochs} epochs with batch size {batch_size}",
-                "estimated_time": hw_estimate["estimated_time"],
+                "estimated_time": f"{hw_estimate['estimated_time_hours']} hours",
                 "artifacts": ["checkpoints/", "training.log"],
             },
             {
