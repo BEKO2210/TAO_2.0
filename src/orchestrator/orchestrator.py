@@ -7,6 +7,7 @@ and report generation across all 15 specialized agents.
 """
 
 import logging
+import sys
 import time
 from typing import Any
 
@@ -63,17 +64,18 @@ class SwarmOrchestrator:
         """
         Register an agent instance with the orchestrator.
 
-        The agent must have AGENT_NAME and AGENT_VERSION attributes.
+        Resolves ``AGENT_NAME`` / ``AGENT_VERSION`` from the instance, the
+        class, or — per SPEC.md — the agent's defining module, in that order.
 
         Args:
             agent_instance: The agent class instance to register
         """
-        agent_name = getattr(agent_instance, "AGENT_NAME", None)
-        agent_version = getattr(agent_instance, "AGENT_VERSION", "unknown")
+        agent_name, agent_version = self._resolve_agent_identity(agent_instance)
 
         if not agent_name:
             raise ValueError(
-                "Agent instance missing AGENT_NAME attribute"
+                "Agent instance missing AGENT_NAME (checked instance, class, "
+                "and module)"
             )
 
         self.agents[agent_name] = agent_instance
@@ -97,8 +99,13 @@ class SwarmOrchestrator:
         Steps:
         1. Validate the task input
         2. Classify the task action through the ApprovalGate
-        3. If SAFE/CAUTION: execute via the routed agent
-        4. If DANGER: return a plan only, do NOT execute
+        3. If DANGER: return a plan only, do NOT route or execute
+        4. Otherwise: route to an agent and execute
+
+        Classification runs **before** routing so that DANGER actions
+        (e.g. ``execute_trade``, ``sign_transaction``) are blocked even
+        when the TaskRouter has no mapping for them — the safety gate
+        is the system of record, not the router table.
 
         Args:
             task: Dictionary with 'type' and optional 'params' keys
@@ -137,7 +144,42 @@ class SwarmOrchestrator:
             )
             return result
 
-        # Step 2: Route to agent and classify action
+        # Step 2: Classify BEFORE routing so DANGER actions are blocked
+        # even if the router has no mapping for the task type.
+        classification = self.approval_gate.classify_action(task_type, task_params)
+        can_execute = self.approval_gate.can_execute(
+            classification, override=self._safety_override
+        )
+
+        if not can_execute:
+            logger.warning(
+                "Task '%s' classified as %s - returning as plan only",
+                task_type, classification,
+            )
+            result = {
+                "status": "blocked",
+                "task_type": task_type,
+                "agent_name": None,
+                "classification": classification,
+                "executed": False,
+                "output": {
+                    "plan": task,
+                    "note": (
+                        f"This is a {classification} action. It requires "
+                        "manual approval. Review the plan carefully before "
+                        "executing with safety_override=True."
+                    ),
+                },
+                "timestamp": time.time(),
+            }
+            self._log_event(
+                event_type="task_blocked",
+                task_type=task_type,
+                classification=classification,
+            )
+            return result
+
+        # Step 3: Route to agent (only for SAFE / CAUTION-with-override)
         try:
             agent_name = self.task_router.route_task(task)
         except ValueError as e:
@@ -146,49 +188,11 @@ class SwarmOrchestrator:
                 "status": "error",
                 "error": str(e),
                 "task_type": task_type,
-                "classification": ApprovalGate.SAFE,
-                "executed": False,
-            }
-
-        # Step 3: Classify the action
-        classification = self.approval_gate.classify_action(task_type, task_params)
-
-        # Step 4: Check if execution is permitted
-        can_execute = self.approval_gate.can_execute(
-            classification, override=self._safety_override
-        )
-
-        if not can_execute:
-            # DANGER action blocked - return as plan only
-            logger.warning(
-                "Task '%s' classified as DANGER - returning as plan only",
-                task_type,
-            )
-            result = {
-                "status": "blocked",
-                "task_type": task_type,
-                "agent_name": agent_name,
                 "classification": classification,
                 "executed": False,
-                "output": {
-                    "plan": task,
-                    "note": (
-                        "This is a DANGER action. It has been classified "
-                        "as requiring manual approval. Review the plan "
-                        "carefully before executing with safety_override=True."
-                    ),
-                },
-                "timestamp": time.time(),
             }
-            self._log_event(
-                event_type="task_blocked",
-                task_type=task_type,
-                agent_name=agent_name,
-                classification=classification,
-            )
-            return result
 
-        # Step 5: Execute via the agent
+        # Step 4: Execute via the agent
         try:
             agent = self.agents.get(agent_name)
             if agent is None:
@@ -655,6 +659,35 @@ class SwarmOrchestrator:
                 )
 
         return {"valid": True, "reason": ""}
+
+    @staticmethod
+    def _resolve_agent_identity(agent_instance: Any) -> tuple[str | None, str]:
+        """
+        Resolve an agent's ``AGENT_NAME`` and ``AGENT_VERSION``.
+
+        Per SPEC.md, agents declare these as module-level constants. Some
+        also expose them on the class. This helper checks the instance,
+        the class, and the defining module so any of those styles works.
+        """
+        sources: list[Any] = [agent_instance, type(agent_instance)]
+        module = sys.modules.get(type(agent_instance).__module__)
+        if module is not None:
+            sources.append(module)
+
+        name: str | None = None
+        version: str = "unknown"
+        for src in sources:
+            if name is None:
+                candidate = getattr(src, "AGENT_NAME", None)
+                if candidate:
+                    name = candidate
+            if version == "unknown":
+                candidate = getattr(src, "AGENT_VERSION", None)
+                if candidate:
+                    version = candidate
+            if name and version != "unknown":
+                break
+        return name, version
 
     def _log_event(self, **kwargs: Any) -> None:
         """
