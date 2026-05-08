@@ -1,0 +1,58 @@
+# =============================================================================
+# TAO / Bittensor Multi-Agent System — Python Abhaengigkeiten
+# =============================================================================
+# INSTALLATION: pip install -r requirements.txt
+# =============================================================================
+
+# --- BITTENSOR SDK ---
+bittensor>=8.0.0,<9.0.0
+
+# --- ASYNC / HTTP ---
+asyncio>=3.4.3
+aiohttp>=3.9.0
+aiofiles>=23.0.0
+
+# --- DATENVERARBEITUNG ---
+pandas>=2.1.0,<3.0.0
+numpy>=1.26.0,<2.0.0
+
+# --- KONFIGURATION & VALIDIERUNG ---
+pydantic>=2.5.0,<3.0.0
+pydantic-settings>=2.1.0
+pyyaml>=6.0.1
+
+# --- HTTP REQUESTS ---
+requests>=2.31.0
+urllib3>=2.1.0
+
+# --- DASHBOARD (STREAMLIT) ---
+streamlit>=1.28.0
+plotly>=5.18.0
+
+# --- LOGGING ---
+structlog>=23.2.0
+
+# --- ENVIRONMENT ---
+python-dotenv>=1.0.0
+
+# --- DATENBANK ---
+sqlitedict>=2.1.0
+
+# --- UTILS ---
+python-dateutil>=2.8.2
+click>=8.1.0
+rich>=13.7.0
+
+# --- SICHERHEIT ---
+cryptography>=41.0.0
+
+# --- TESTING (fuer CI) ---
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# --- TYP-CHECKING (fuer CI) ---
+mypy>=1.7.0
+
+# --- LINTING (fuer CI) ---
+ruff>=0.1.6
