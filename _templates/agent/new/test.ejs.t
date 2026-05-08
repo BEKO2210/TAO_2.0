@@ -22,15 +22,17 @@ def test_agent_run_validates_input():
     assert "task.type" in result["reason"]
 
 
-def test_agent_run_success():
+def test_agent_run_returns_flat_dict_with_status():
     agent = <%= h.pascal(name) %>Agent()
     result = agent.run({"type": "ping"})
-    assert result["status"] == "ok"
-    assert result["agent"] == AGENT_NAME
+    # Convention: flat dict, top-level "status", no nested "result" wrapper.
+    assert result["status"] == "complete"
+    assert "result" not in result, "agent.run() must not wrap payload in 'result'"
+    assert result["task_type"] == "ping"
 
 
 def test_agent_get_status_reports_state():
     agent = <%= h.pascal(name) %>Agent()
     status = agent.get_status()
-    assert status["agent"] == AGENT_NAME
+    assert status["agent_name"] == AGENT_NAME
     assert status["state"] == "idle"
