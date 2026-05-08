@@ -73,16 +73,34 @@ class SubnetScoringAgent:
         Args:
             task: Dictionary with 'params' containing:
                 - subnets: List of subnet dictionaries to score
-                - netuid: Specific NetUID to score
+                - netuid / subnet_id: Specific NetUID to score (alias)
                 - custom_weights: Override default weights
+
+            Top-level keys ``subnets``, ``netuid``, ``subnet_id``, and
+            ``custom_weights`` are also accepted directly on the task
+            (without nesting under ``params``) so callers can pass either
+            ``{"type": ..., "subnet_id": 12}`` or
+            ``{"type": ..., "params": {"netuid": 12}}``.
 
         Returns:
             Scoring results with per-subnet scores and justifications
         """
         self._status = "running"
-        params = task.get("params", {})
-        subnets = params.get("subnets", [])
+        params = self._resolve_params(task)
+        subnets = list(params.get("subnets", []) or [])
         custom_weights = params.get("custom_weights", {})
+
+        # If the caller passed only an identifier (subnet_id / netuid) and
+        # no full subnet dict, scaffold a minimal stub so the agent
+        # produces a coherent (if neutral) score instead of total_scored=0.
+        netuid = params.get("netuid", params.get("subnet_id"))
+        if not subnets and netuid is not None:
+            subnets = [{
+                "netuid": netuid,
+                "name": f"subnet_{netuid}",
+                "category": params.get("category", "unknown"),
+                "_stub": True,
+            }]
 
         if custom_weights:
             self._weights.update(custom_weights)
@@ -106,6 +124,13 @@ class SubnetScoringAgent:
                 "weights_used": self._weights,
                 "total_scored": len(scored_subnets),
             }
+            stub_count = sum(1 for s in subnets if s.get("_stub"))
+            if stub_count:
+                result["stub_count"] = stub_count
+                result["note"] = (
+                    f"{stub_count} subnet(s) scored from stub metadata. "
+                    "Pass full subnet dicts via params.subnets for accurate scoring."
+                )
 
             self._scores.extend(scored_subnets)
             self._status = "complete"
@@ -132,6 +157,22 @@ class SubnetScoringAgent:
             "criteria_weights": self._weights,
         }
 
+    @staticmethod
+    def _resolve_params(task: dict) -> dict:
+        """
+        Merge ``task.params`` with task-level alias keys so callers can
+        pass either nested params or flat task fields.
+
+        Top-level keys ``subnets``, ``netuid``, ``subnet_id``,
+        ``custom_weights``, ``category`` win when ``params`` is missing
+        them, but explicit ``params`` values are never overwritten.
+        """
+        params = dict(task.get("params") or {})
+        for key in ("subnets", "netuid", "subnet_id", "custom_weights", "category"):
+            if key in task and key not in params:
+                params[key] = task[key]
+        return params
+
     def validate_input(self, task: dict) -> tuple[bool, str]:
         """
         Validate task input.
@@ -144,7 +185,7 @@ class SubnetScoringAgent:
         """
         if not isinstance(task, dict):
             return False, "Task must be a dictionary"
-        params = task.get("params", {})
+        params = self._resolve_params(task)
         subnets = params.get("subnets", [])
         if not isinstance(subnets, list):
             return False, "subnets must be a list"
