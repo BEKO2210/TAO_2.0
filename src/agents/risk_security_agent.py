@@ -200,6 +200,7 @@ class RiskSecurityAgent:
         """
         operation_type = params.get("operation_type", "")
         content = str(params.get("content", ""))
+        data_reviewed = bool(operation_type) or bool(content)
 
         findings: list[dict] = []
         risk_score = 0
@@ -252,7 +253,7 @@ class RiskSecurityAgent:
             })
             risk_score += 50
 
-        return self._compile_verdict(findings, risk_score)
+        return self._compile_verdict(findings, risk_score, data_reviewed=data_reviewed)
 
     def _review_repository(self, params: dict) -> dict:
         """
@@ -266,6 +267,7 @@ class RiskSecurityAgent:
         """
         repo_url = params.get("repo_url", "")
         code_content = params.get("code_content", "")
+        data_reviewed = bool(repo_url) or bool(code_content)
 
         findings: list[dict] = []
         risk_score = 0
@@ -318,7 +320,9 @@ class RiskSecurityAgent:
                     })
                     risk_score += 5
 
-        return self._compile_verdict(findings, risk_score, repo_url)
+        return self._compile_verdict(
+            findings, risk_score, repo_url, data_reviewed=data_reviewed,
+        )
 
     def _review_url(self, params: dict) -> dict:
         """
@@ -331,6 +335,7 @@ class RiskSecurityAgent:
             URL security review
         """
         url = params.get("url", "")
+        data_reviewed = bool(url)
         findings: list[dict] = []
         risk_score = 0
 
@@ -387,7 +392,9 @@ class RiskSecurityAgent:
             })
             risk_score += 10
 
-        return self._compile_verdict(findings, risk_score, url)
+        return self._compile_verdict(
+            findings, risk_score, url, data_reviewed=data_reviewed,
+        )
 
     def _general_review(self, params: dict) -> dict:
         """
@@ -401,6 +408,10 @@ class RiskSecurityAgent:
         """
         content = str(params.get("content", ""))
         operation_type = params.get("operation_type", "general")
+        # "general" is the *default* op-type when nothing was specified, so
+        # treat it as no signal. Any explicit value (including the special
+        # cases below) counts as data.
+        data_reviewed = bool(content) or operation_type != "general"
 
         findings: list[dict] = []
         risk_score = 0
@@ -433,7 +444,7 @@ class RiskSecurityAgent:
             })
             risk_score += 5
 
-        return self._compile_verdict(findings, risk_score)
+        return self._compile_verdict(findings, risk_score, data_reviewed=data_reviewed)
 
     def _scan_scam_indicators(self, content: str) -> tuple[list[dict], int]:
         """Scan content for scam indicators."""
@@ -553,6 +564,7 @@ class RiskSecurityAgent:
         findings: list[dict],
         risk_score: int,
         target: str = "",
+        data_reviewed: bool = True,
     ) -> dict:
         """
         Compile final verdict from findings.
@@ -561,12 +573,21 @@ class RiskSecurityAgent:
         - STOP: Critical findings - halt everything (score >= 50)
         - REJECT: High risk - don't proceed (score 30-49)
         - PAUSE: Medium risk - manual review needed (score 15-29)
-        - PROCEED: Low risk - safe to continue (score < 15)
+        - PROCEED: Low risk - safe to continue (score < 15) **and**
+          ``data_reviewed`` is True (i.e. the agent actually inspected
+          something).
+        - INSUFFICIENT_DATA: Caller did not provide content / target /
+          identifying info, so no scans ran. Refusing to issue PROCEED
+          on absence of evidence — empty findings means "nothing was
+          checked", not "nothing is wrong".
 
         Args:
             findings: List of finding dictionaries
             risk_score: Composite risk score (0-100+)
             target: Target being reviewed
+            data_reviewed: True iff the caller passed enough input for
+                at least one scan to make a meaningful pass. When False,
+                ``PROCEED`` is suppressed in favour of ``INSUFFICIENT_DATA``.
 
         Returns:
             Compiled review result
@@ -580,6 +601,8 @@ class RiskSecurityAgent:
             verdict = "REJECT"
         elif risk_score >= 15:
             verdict = "PAUSE"
+        elif not data_reviewed:
+            verdict = "INSUFFICIENT_DATA"
         else:
             verdict = "PROCEED"
 
@@ -610,6 +633,16 @@ class RiskSecurityAgent:
             logger.critical(
                 "RISK STOP issued for target=%s: %d critical findings",
                 target, critical_count,
+            )
+        elif verdict == "INSUFFICIENT_DATA":
+            result["system_action"] = (
+                "Risk review could not run — no content, repo, URL, or "
+                "operation parameters were provided. Re-issue the task with "
+                "concrete input before treating this as 'safe'."
+            )
+            logger.warning(
+                "RISK INSUFFICIENT_DATA for target=%s: nothing to scan",
+                target,
             )
 
         return result
