@@ -1,0 +1,258 @@
+# =============================================================================
+# TAO / Bittensor Multi-Agent System — Docker Compose Configuration
+# =============================================================================
+# VERWENDUNG:
+#   docker compose up -d          # Starten
+#   docker compose down           # Stoppen
+#   docker compose logs -f app    # Logs anzeigen
+#   docker compose build          # Container neu bauen
+#
+# WICHTIG:
+#   - .env Datei muss existieren (cp .env.example .env)
+#   - Keine sensitiven Daten in Compose-File eintragen!
+# =============================================================================
+
+version: "3.8"
+
+services:
+  # ---------------------------------------------------------------------------
+  # HAUPT-APP: Python Multi-Agent System
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: tao-agents-app
+    restart: unless-stopped
+
+    # Umgebungsvariablen aus .env laden
+    env_file:
+      - .env
+
+    # Zusaetzliche Environment-Variablen
+    environment:
+      # Container-spezifische Einstellungen
+      - CONTAINER=true
+      - LOG_DIR=/app/logs
+      - DATABASE_PATH=/app/data/agents.db
+      - TZ=Europe/Berlin
+
+    # Volumes fuer Persistenz
+    volumes:
+      # SQLite-Datenbank (Persistenz)
+      - ./data:/app/data:rw
+      # Logs
+      - ./logs:/app/logs:rw
+      # Reports
+      - ./data/reports:/app/data/reports:rw
+      # Konfiguration
+      - ./config:/app/config:ro
+
+    # Health Check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Ressourcenlimits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "service_name,environment"
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+
+    # Netzwerk
+    networks:
+      - tao-agents-network
+
+  # ---------------------------------------------------------------------------
+  # DASHBOARD: Streamlit Web-Interface (Optional)
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dashboard
+    container_name: tao-agents-dashboard
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      - CONTAINER=true
+      - DATABASE_PATH=/app/data/agents.db
+      - LOG_DIR=/app/logs
+      - DASHBOARD_HOST=0.0.0.0
+      - TZ=Europe/Berlin
+
+    volumes:
+      # Datenbank fuer Abfragen
+      - ./data:/app/data:ro
+      # Logs fuer Anzeige
+      - ./logs:/app/logs:ro
+      # Reports
+      - ./data/reports:/app/data/reports:ro
+
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+
+    # Dashboard ist vom App-Service abhaengig
+    depends_on:
+      app:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+      start_interval: 5s
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+    networks:
+      - tao-agents-network
+
+    profiles:
+      - dashboard
+      - full
+
+  # ---------------------------------------------------------------------------
+  # BACKUP: Automatisches Datenbank-Backup
+  # ---------------------------------------------------------------------------
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: tao-agents-backup
+    restart: unless-stopped
+
+    environment:
+      - BACKUP_MODE=true
+      - DATABASE_PATH=/app/data/agents.db
+      - BACKUP_DIR=/app/data/backups
+      - BACKUP_INTERVAL=3600
+      - BACKUP_MAX_KEEP=24
+
+    volumes:
+      - ./data:/app/data:rw
+
+    command: >
+      python -m scripts.backup_daemon
+      --db /app/data/agents.db
+      --output /app/data/backups
+      --interval 3600
+      --max-backups 24
+
+    depends_on:
+      app:
+        condition: service_healthy
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+    networks:
+      - tao-agents-network
+
+    profiles:
+      - backup
+      - full
+
+  # ---------------------------------------------------------------------------
+  # WATCHTOWER: Automatisches Container-Update (Optional)
+  # ---------------------------------------------------------------------------
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: tao-agents-watchtower
+    restart: unless-stopped
+
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=86400
+      - WATCHTOWER_INCLUDE_STOPPED=true
+      - WATCHTOWER_REVIVE_STOPPED=false
+      - TZ=Europe/Berlin
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+    networks:
+      - tao-agents-network
+
+    profiles:
+      - watchtower
+      - full
+
+# =============================================================================
+# NETZWERKE
+# =============================================================================
+networks:
+  tao-agents-network:
+    driver: bridge
+    name: tao-agents-network
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# VOLUMES (Docker Managed)
+# =============================================================================
+volumes:
+  tao-agents-data:
+    driver: local
+  tao-agents-logs:
+    driver: local
+  tao-agents-backups:
+    driver: local

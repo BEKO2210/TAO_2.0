@@ -1,0 +1,264 @@
+# =============================================================================
+# TAO / Bittensor Multi-Agent System — .gitignore
+# =============================================================================
+# DIESER GITIGNORE VERHINDERT, DASS SENSITIVE DATEN IM REPOSITORY LANDEN.
+# BEI AENDERUNGEN VORSICHTIG SEIN — NIE SENSITIVE DATEIEN ENTKOMMENTIEREN!
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# HYGEN / NODE (scaffolding only — Node is not a runtime dependency)
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------------------------------------------------------------------------
+# ENVIRONMENT & SECRETS — ABSOLUT VERBOTEN IM REPO
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+secrets/
+secrets.*
+config/secrets/
+config/secrets.*
+
+# ---------------------------------------------------------------------------
+# WALLET DATEIEN — NIEMALS IM REPO
+# ---------------------------------------------------------------------------
+# Bittensor Wallet-Verzeichnisse
+~/.bittensor/
+.bittensor/
+wallets/
+wallet/
+*.wallet
+wallet.json
+wallet_backup/
+wallet_backups/
+
+# Coldkeys und Hotkeys (Private Keys)
+*coldkey*
+*hotkey*
+*.coldkey
+*.hotkey
+!coldkey_template.json
+!hotkey_template.json
+
+# Seed Phrase Dateien
+*seed*
+*mnemonic*
+*phrase*
+*.seed
+.mnemonic
+recovery_phrase.txt
+
+# Key-Dateien
+*.pem
+*.key
+*.pk
+private*
+secret_key*
+
+# ---------------------------------------------------------------------------
+# PYTHON — Cache & Build-Artefakte
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.python-version
+
+# ---------------------------------------------------------------------------
+# LOGS & DATEN — NIEMALS IM REPO
+# ---------------------------------------------------------------------------
+*.log
+logs/
+log/
+*.log.*
+*.audit
+audit/
+
+# SQLite Datenbanken
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+
+# Data-Verzeichnis (laufzeitgeneriert)
+data/*.json
+data/*.db
+data/*.csv
+data/reports/
+data/cache/
+data/tmp/
+data/wallet_state.json
+
+# ---------------------------------------------------------------------------
+# DOCKER
+# ---------------------------------------------------------------------------
+docker-compose.override.yml
+.dockerignore
+Dockerfile.*
+!Dockerfile
+.docker/
+
+# ---------------------------------------------------------------------------
+# IDE & EDITORS
+# ---------------------------------------------------------------------------
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+.#*
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ---------------------------------------------------------------------------
+# TESTING
+# ---------------------------------------------------------------------------
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ---------------------------------------------------------------------------
+# MYPY & LINTING
+# ---------------------------------------------------------------------------
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# OS-SPECIFIC
+# ---------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ---------------------------------------------------------------------------
+# TEMPORAERE DATEIEN
+# ---------------------------------------------------------------------------
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+*.old
+*.rej
+*.swo
+
+# ---------------------------------------------------------------------------
+# REPORTS (generiert)
+# ---------------------------------------------------------------------------
+reports/*.html
+reports/*.pdf
+reports/*.csv
+reports/*.json
+
+# ---------------------------------------------------------------------------
+# CONFIG-OVERRIDES (lokal)
+# ---------------------------------------------------------------------------
+config/local.*
+config/override.*
+config/*.local
+
+# ---------------------------------------------------------------------------
+# GROßE DATEIEN
+# ---------------------------------------------------------------------------
+*.tar.gz
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+
+# ---------------------------------------------------------------------------
+# DOKUMENTATION BUILD
+# ---------------------------------------------------------------------------
+site/
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# =============================================================================
+# WICHTIG: WENN DU EINE DATEI HINZUFUEGEN MUSST, DIE HIER AUSGESCHLOSSEN IST,
+# BENUTZE "git add -f <datei>" ODER PASSE DIESE DATEI AN.
+# SEI DIR IMMER BEWUSST, DASS DU KEINE SENSITIVEN DATEN COMMITTEST!
+# =============================================================================

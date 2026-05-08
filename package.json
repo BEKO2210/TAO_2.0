@@ -1,0 +1,17 @@
+{
+  "name": "tao-bittensor-swarm-scaffolding",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hygen scaffolding helpers for the TAO / Bittensor Multi-Agent System (Python project). Node is only used for code generation, not at runtime.",
+  "scripts": {
+    "new:agent": "hygen agent new",
+    "new:collector": "hygen collector new",
+    "new:scoring": "hygen scoring new",
+    "new:test": "hygen test new",
+    "new:doc": "hygen doc new",
+    "list": "hygen --help"
+  },
+  "devDependencies": {
+    "hygen": "^6.2.11"
+  }
+}
