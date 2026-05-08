@@ -230,11 +230,25 @@ class WalletWatchAgent:
             Wallet watch report or portfolio snapshot
         """
         self._status = "running"
-        # Support both direct action and params.action
-        params = task.get("params", {})
-        if "action" in task and not params:
-            params = task
+        # Support both nested ``params`` and flat task-level keys. If the
+        # caller passed any of action/address/label at the top level and
+        # didn't nest them, promote them so the rest of run() doesn't care.
+        params = dict(task.get("params") or {})
+        for key in ("action", "address", "label"):
+            if key in task and key not in params:
+                params[key] = task[key]
         action = params.get("action", "snapshot")
+        address = params.get("address", "")
+
+        # Auto-watch: if the caller asked for a snapshot/check and supplied
+        # an address that we don't yet track, register it first so the
+        # operation has something to look at instead of returning balance=0.
+        if address and action in ("snapshot", "check") and address not in self._watched:
+            if self._validate_address(address):
+                self._add_watch({
+                    "address": address,
+                    "label": params.get("label", ""),
+                })
 
         logger.info("WalletWatchAgent: action=%s", action)
 
