@@ -1355,6 +1355,15 @@ def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
     help="Comma-separated netuids the strategy is allowed to trade.",
 )
 @click.option(
+    "--reconcile-from-coldkey", "reconcile_coldkey", default=None,
+    help=(
+        "Cold-start reconciliation: read on-chain stake for this coldkey "
+        "ss58 before the first tick so the position cap sees the real "
+        "current_total_tao after a process restart. Strongly recommended "
+        "in --live mode."
+    ),
+)
+@click.option(
     "--live-trading", is_flag=True,
     help=(
         "Set StrategyMeta.live_trading=True. Required (along with "
@@ -1374,11 +1383,12 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
     ctx, strategy_name, paper, keystore_path,
     threshold_pct, slot_size_tao, max_position_tao, max_daily_loss_tao,
     max_total_tao, tick_interval_s, max_ticks, ledger_db, kill_switch_path,
-    watchlist, live_trading, yes_i_understand,
+    watchlist, reconcile_coldkey, live_trading, yes_i_understand,
 ):
     """Run a strategy live or in paper mode against the read-only collectors."""
     from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
     from tao_swarm.trading import (
+        BittensorChainPositionReader,
         BittensorSigner,
         DailyLossLimit,
         Executor,
@@ -1506,12 +1516,31 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
     def snapshot_fn():
         return chain.get_subnet_list()
 
+    # 5. Optional cold-start reconciliation. We require a real network
+    #    (not the mock pseudo-network) before constructing a
+    #    BittensorChainPositionReader because it would just fail
+    #    against mock anyway.
+    chain_reader = None
+    if reconcile_coldkey:
+        if config.get("use_mock_data", True):
+            raise click.ClickException(
+                "--reconcile-from-coldkey requires --live (real network); "
+                "the mock chain has no coldkey state to reconcile against"
+            )
+        net_for_reader = (
+            config.get("network") if config.get("network") in ("finney", "test")
+            else "finney"
+        )
+        chain_reader = BittensorChainPositionReader(network=net_for_reader)
+
     runner = TradingRunner(
         strategy=strat,
         executor=executor,
         snapshot_fn=snapshot_fn,
         paper=paper,
         tick_interval_s=tick_interval_s,
+        chain_reader=chain_reader,
+        reconcile_coldkey_ss58=reconcile_coldkey,
     )
 
     click.echo(click.style(

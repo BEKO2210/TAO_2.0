@@ -37,6 +37,10 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from tao_swarm.trading.executor import ExecResult, Executor
+from tao_swarm.trading.reconcile import (
+    ChainPositionReader,
+    aggregate_by_netuid,
+)
 from tao_swarm.trading.strategy_base import Strategy
 
 logger = logging.getLogger(__name__)
@@ -77,6 +81,8 @@ class RunnerStatus:
     last_error: str | None
     open_positions: dict[int, dict[str, float]]
     halted_reason: str | None
+    last_reconcile_ts: float | None = None
+    reconciled_total_tao: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -95,6 +101,8 @@ class RunnerStatus:
                 str(k): dict(v) for k, v in self.open_positions.items()
             },
             "halted_reason": self.halted_reason,
+            "last_reconcile_ts": self.last_reconcile_ts,
+            "reconciled_total_tao": self.reconciled_total_tao,
         }
 
 
@@ -206,11 +214,19 @@ class TradingRunner:
         history_window: int = 16,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
+        chain_reader: ChainPositionReader | None = None,
+        reconcile_coldkey_ss58: str | None = None,
+        auto_reconcile: bool = True,
     ) -> None:
         if tick_interval_s <= 0:
             raise ValueError("tick_interval_s must be > 0")
         if max_consecutive_errors <= 0:
             raise ValueError("max_consecutive_errors must be > 0")
+        if (chain_reader is None) != (reconcile_coldkey_ss58 is None):
+            raise ValueError(
+                "chain_reader and reconcile_coldkey_ss58 must be set together "
+                "or both omitted"
+            )
         self._strategy = strategy
         self._executor = executor
         self._snapshot_fn = snapshot_fn
@@ -220,6 +236,10 @@ class TradingRunner:
         self._builder = MarketStateBuilder(history_window=history_window)
         self._clock = clock
         self._sleep = sleep
+        self._chain_reader = chain_reader
+        self._reconcile_coldkey = reconcile_coldkey_ss58
+        self._auto_reconcile = bool(auto_reconcile) and chain_reader is not None
+        self._reconciled_once = False
 
         self._positions: dict[int, _Position] = {}
         self._ticks = 0
@@ -228,6 +248,8 @@ class TradingRunner:
         self._refused = 0
         self._errors = 0
         self._consecutive_errors = 0
+        self._last_reconcile_ts: float | None = None
+        self._reconciled_total_tao: float | None = None
         self._last_tick_ts: float | None = None
         self._last_error: str | None = None
         self._halted_reason: str | None = None
@@ -275,7 +297,50 @@ class TradingRunner:
                 last_error=self._last_error,
                 open_positions=positions,
                 halted_reason=self._halted_reason,
+                last_reconcile_ts=self._last_reconcile_ts,
+                reconciled_total_tao=self._reconciled_total_tao,
             )
+
+    def reconcile(self) -> dict[int, float]:
+        """Replace the in-memory position book with on-chain truth.
+
+        Reads stake-per-netuid for the configured coldkey via the
+        injected :class:`ChainPositionReader`, sums stakes per
+        netuid (in case of multiple delegated hotkeys), and rewrites
+        ``self._positions`` with the result.
+
+        Existing per-position ``entry`` price information is lost
+        — the chain doesn't tell us at what price the operator
+        opened a position, so reconciled positions get
+        ``entry = 0.0``. The strategy's mark-to-market arithmetic
+        must tolerate that (the momentum strategy doesn't use entry
+        for its decision; only the backtester's realised-P&L
+        bookkeeping does, and the backtester runs in-memory only).
+
+        Returns the per-netuid totals it loaded so the caller can
+        log them. Raises if the reader is not configured.
+        """
+        if self._chain_reader is None or self._reconcile_coldkey is None:
+            raise RuntimeError(
+                "reconcile() requires chain_reader and "
+                "reconcile_coldkey_ss58 to be set on the runner"
+            )
+        positions = self._chain_reader.read_positions(self._reconcile_coldkey)
+        totals = aggregate_by_netuid(positions)
+        with self._lock:
+            self._positions = {
+                netuid: _Position(size=size, entry=0.0)
+                for netuid, size in totals.items()
+                if size > 0
+            }
+            self._last_reconcile_ts = float(self._clock())
+            self._reconciled_total_tao = sum(totals.values())
+            self._reconciled_once = True
+        logger.info(
+            "Reconciled %d positions for coldkey %s (total %.4f TAO)",
+            len(totals), self._reconcile_coldkey, self._reconciled_total_tao,
+        )
+        return totals
 
     def reset(self) -> None:
         """Clear the halted state and the consecutive-error counter.
@@ -299,12 +364,36 @@ class TradingRunner:
     def tick(self) -> list[ExecResult]:
         """Run one iteration: snapshot → strategy.evaluate → execute.
 
+        On the first tick, if ``auto_reconcile`` is enabled and a
+        chain reader was configured, the runner pulls the current
+        on-chain stake into its position book before doing anything
+        else. A reconciliation failure halts the runner immediately
+        — running with a wrong ``current_total_tao`` would defeat
+        the position cap.
+
         Returns the list of ``ExecResult`` produced this tick.
         Returns an empty list if the runner is halted or if the
-        snapshot or strategy raised.
+        snapshot / strategy / reconciliation raised.
         """
         if self.is_halted:
             return []
+
+        if self._auto_reconcile and not self._reconciled_once:
+            try:
+                self.reconcile()
+            except Exception as exc:
+                # A reconciliation failure on cold start is fatal —
+                # we cannot proceed with a stale or empty book and
+                # still trust the position cap.
+                self._record_error(f"reconcile failed: {exc!r}")
+                with self._lock:
+                    if self._halted_reason is None:
+                        self._halted_reason = (
+                            "reconcile failed on cold start; refusing to "
+                            "trade without verified on-chain position book"
+                        )
+                        self._stop_event.set()
+                return []
 
         try:
             snapshot = self._snapshot_fn()
