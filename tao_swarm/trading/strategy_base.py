@@ -56,7 +56,20 @@ class TradeProposal:
 
 @dataclass(frozen=True)
 class StrategyMeta:
-    """The risk-surface declaration every strategy must publish."""
+    """The risk-surface declaration every strategy must publish.
+
+    ``live_trading`` is the strategy-level half of the
+    three-step authorisation that PR 2E's ``Executor`` requires
+    before signing anything:
+
+    1. Operator sets ``TAO_LIVE_TRADING=1`` in the environment.
+    2. Operator wires a ``signer_factory`` into the ``Executor``.
+    3. The strategy declares ``live_trading=True`` in its ``meta()``.
+
+    All three must be true before a real transaction is broadcast.
+    The default is ``False`` — strategies are paper-only unless the
+    author explicitly opts in.
+    """
 
     name: str
     version: str
@@ -64,6 +77,7 @@ class StrategyMeta:
     max_daily_loss_tao: float
     description: str = ""
     actions_used: tuple[str, ...] = field(default_factory=tuple)
+    live_trading: bool = False
 
 
 class Strategy(ABC):

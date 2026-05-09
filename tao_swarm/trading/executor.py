@@ -1,7 +1,7 @@
 """
 Trade Executor — routes a :class:`~tao_swarm.trading.strategy_base.
 TradeProposal` through the guards and into either the paper ledger
-(default) or the live signing path (PR 2E, raises here for now).
+(default) or the live signing path (PR 2E).
 
 The executor is the single point in the system that decides
 "this proposal becomes a real action". Everything else feeds
@@ -15,6 +15,12 @@ Decision matrix:
     mode == AUTO_TRADING and ``paper=False``  → guard chain:
         position cap check → daily-loss check → live signing path
 
+The live path itself runs a SECOND, separate three-step gate (env
+var, signer factory, strategy opt-in) inside
+:func:`tao_swarm.trading.signer.authorise_live_trade`. Both the
+mode/cap/kill-switch chain AND the live-trade gate must pass before
+a real extrinsic is broadcast.
+
 If any guard refuses, the executor returns an :class:`ExecResult`
 with ``status="refused"`` and a reason. It never raises on
 business-logic refusal; raising is reserved for genuine errors
@@ -26,10 +32,10 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from tao_swarm.trading.modes import WalletMode
-from tao_swarm.trading.strategy_base import TradeProposal
+from tao_swarm.trading.strategy_base import StrategyMeta, TradeProposal
 
 if TYPE_CHECKING:
     from tao_swarm.trading.guards import (
@@ -38,6 +44,7 @@ if TYPE_CHECKING:
         PositionCap,
     )
     from tao_swarm.trading.ledger import PaperLedger
+    from tao_swarm.trading.signer import BittensorSigner
 
 logger = logging.getLogger(__name__)
 
@@ -68,16 +75,25 @@ class Executor:
         position_cap: PositionCap,
         daily_loss_limit: DailyLossLimit,
         ledger: PaperLedger,
+        signer_factory: Callable[[], BittensorSigner] | None = None,
     ) -> None:
         self._mode = mode
         self._kill = kill_switch
         self._cap = position_cap
         self._loss = daily_loss_limit
         self._ledger = ledger
+        self._signer_factory = signer_factory
 
     @property
     def mode(self) -> WalletMode:
         return self._mode
+
+    @property
+    def has_signer(self) -> bool:
+        """True if a signer factory is wired up. Does NOT mean live
+        trading is authorised — the env var and per-strategy opt-in
+        still have to be in place."""
+        return self._signer_factory is not None
 
     # ---- public ----
 
@@ -88,6 +104,8 @@ class Executor:
         paper: bool = True,
         current_total_tao: float = 0.0,
         strategy_name: str = "unknown",
+        strategy_meta: StrategyMeta | None = None,
+        target_hotkey_ss58: str | None = None,
     ) -> ExecResult:
         """Run a proposal through the guards and record the outcome.
 
@@ -96,15 +114,21 @@ class Executor:
             paper: If True (default), only the paper ledger is touched.
                 Setting ``paper=False`` requests a live signed
                 transaction. Live execution requires
-                ``mode == AUTO_TRADING`` AND all guards pass; this
-                PR's executor raises ``NotImplementedError`` on the
-                actual signing path because that lands in PR 2E.
+                ``mode == AUTO_TRADING`` AND all guards pass AND the
+                three-step live-trade gate (env / signer / strategy
+                opt-in) passes inside ``_live_execute``.
             current_total_tao: Caller-supplied current open exposure
                 across all positions, used for the position-cap
                 check. The executor doesn't compute this itself
                 because the strategy / orchestrator already tracks
                 it.
             strategy_name: Recorded in the ledger for auditing.
+            strategy_meta: Required for ``paper=False``; the
+                live-trade gate refuses unless
+                ``strategy_meta.live_trading is True``.
+            target_hotkey_ss58: Optional override for the hotkey /
+                destination ss58 forwarded to the signer. If
+                ``None`` the value is taken from the proposal target.
 
         Returns:
             ExecResult describing what happened. Never raises on a
@@ -156,7 +180,11 @@ class Executor:
         # 5. All guards passed. Branch paper vs live.
         if paper:
             return self._record_paper(proposal, strategy_name)
-        return self._live_execute(proposal, strategy_name)
+        return self._live_execute(
+            proposal, strategy_name,
+            strategy_meta=strategy_meta,
+            target_hotkey_ss58=target_hotkey_ss58,
+        )
 
     # ---- internals ----
 
@@ -194,16 +222,109 @@ class Executor:
         )
 
     def _live_execute(
-        self, proposal: TradeProposal, strategy_name: str,
+        self,
+        proposal: TradeProposal,
+        strategy_name: str,
+        *,
+        strategy_meta: StrategyMeta | None,
+        target_hotkey_ss58: str | None,
     ) -> ExecResult:
-        """Sign and broadcast. Lands in PR 2E.
+        """Sign and broadcast through the configured signer.
 
-        Until then this is a hard wall. Calling it without the
-        keystore wired up is exactly the kind of footgun that
-        would put real money at risk; refusing here is the safe
-        default."""
-        raise NotImplementedError(
-            "live signing path not yet wired up — keystore (PR 2C) and "
-            "live executor (PR 2E) must land first; in the meantime use "
-            "execute(..., paper=True)"
+        Runs the second-level three-step gate (env / signer / strategy
+        opt-in) before instantiating the signer. Records the result —
+        success or failure — in the ledger as a non-paper trade so the
+        audit trail is complete regardless of outcome.
+        """
+        from tao_swarm.trading.ledger import TradeRecord
+        from tao_swarm.trading.signer import (
+            BroadcastError,
+            LiveSignerError,
+            authorise_live_trade,
         )
+
+        ok, reason = authorise_live_trade(
+            strategy_meta=strategy_meta,
+            signer_factory=self._signer_factory,
+        )
+        if not ok:
+            return self._refuse(proposal, paper=False, reason=reason)
+
+        # signer_factory is non-None here because authorise_live_trade
+        # would have refused otherwise. Narrow the type for mypy.
+        assert self._signer_factory is not None
+        try:
+            signer = self._signer_factory()
+        except Exception as exc:
+            return ExecResult(
+                status="error", paper=False, proposal=proposal,
+                reason=f"signer construction failed: {exc}",
+            )
+
+        try:
+            with signer:
+                receipt = signer.submit(
+                    proposal,
+                    target_hotkey_ss58=target_hotkey_ss58,
+                )
+        except LiveSignerError as exc:
+            self._record_failed_live(proposal, strategy_name, str(exc))
+            return ExecResult(
+                status="refused" if isinstance(exc, BroadcastError) else "error",
+                paper=False, proposal=proposal,
+                reason=f"live signer error: {exc}",
+            )
+        except Exception as exc:
+            self._record_failed_live(proposal, strategy_name, repr(exc))
+            return ExecResult(
+                status="error", paper=False, proposal=proposal,
+                reason=f"unexpected signer error: {exc!r}",
+            )
+
+        record = TradeRecord(
+            strategy=strategy_name,
+            action=proposal.action,
+            target=dict(proposal.target),
+            amount_tao=proposal.amount_tao,
+            price_tao=proposal.price_tao,
+            realised_pnl_tao=0.0,
+            paper=False,
+            note=(
+                f"{proposal.reasoning} | live: {receipt.message}"
+                if proposal.reasoning else f"live: {receipt.message}"
+            ),
+            tx_hash=receipt.tx_hash,
+        )
+        self._ledger.record_trade(record)
+        return ExecResult(
+            status="executed", paper=False,
+            reason=receipt.message,
+            trade_id=record.id, proposal=proposal,
+        )
+
+    def _record_failed_live(
+        self, proposal: TradeProposal, strategy_name: str, reason: str,
+    ) -> None:
+        """Persist a failed live attempt so the audit trail is intact.
+
+        The ledger gets a non-paper row with ``tx_hash=None`` and the
+        failure reason in the ``note``. Without this, a refused or
+        errored live attempt would leave no on-disk evidence — bad
+        for both forensic review and daily-loss accounting.
+        """
+        from tao_swarm.trading.ledger import TradeRecord
+
+        try:
+            self._ledger.record_trade(TradeRecord(
+                strategy=strategy_name,
+                action=f"{proposal.action}_failed",
+                target=dict(proposal.target),
+                amount_tao=proposal.amount_tao,
+                price_tao=proposal.price_tao,
+                realised_pnl_tao=0.0,
+                paper=False,
+                note=f"live attempt failed: {reason}",
+                tx_hash=None,
+            ))
+        except Exception as exc:  # pragma: no cover - ledger noise
+            logger.warning("failed to record failed-live attempt: %s", exc)

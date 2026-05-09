@@ -456,14 +456,23 @@ def test_executor_paper_default_records_to_ledger(tmp_path, monkeypatch):
     assert rows[0].paper is True
 
 
-def test_executor_live_path_raises_until_pr_2e(tmp_path, monkeypatch):
-    """Calling the live path when AUTO_TRADING + all guards pass
-    must raise NotImplementedError, not silently succeed. This locks
-    in that the signing path is genuinely not yet wired up."""
+def test_executor_live_path_refuses_without_signer_factory(tmp_path, monkeypatch):
+    """With PR 2E in place the live path no longer raises
+    NotImplementedError — it returns a clean refusal because no
+    ``signer_factory`` was wired into the Executor. The point of the
+    test is to lock in that the live path REFUSES (not raises and not
+    silently succeeds) when authorisation prerequisites aren't met.
+
+    The companion test in ``tests/test_trading_signer.py`` covers the
+    end-to-end success path with a stubbed signer."""
     monkeypatch.delenv("TAO_KILL_SWITCH", raising=False)
-    ex, _, _ = _build_executor(tmp_path)
-    with pytest.raises(NotImplementedError):
-        ex.execute(_proposal(amount=2), paper=False, current_total_tao=0)
+    monkeypatch.delenv("TAO_LIVE_TRADING", raising=False)
+    ex, ledger, _ = _build_executor(tmp_path)
+    res = ex.execute(_proposal(amount=2), paper=False, current_total_tao=0)
+    assert res.status == "refused"
+    assert "TAO_LIVE_TRADING" in res.reason or "signer_factory" in res.reason
+    # No successful trade row written.
+    assert ledger.total_count() == 0
 
 
 def test_executor_rejects_non_proposal(tmp_path, monkeypatch):
