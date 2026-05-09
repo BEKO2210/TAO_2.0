@@ -36,6 +36,7 @@
 - [Architektur](#architektur)
 - [Die 15 Agenten](#die-15-agenten)
 - [Plug-ins (eigene Agenten)](#plug-ins-eigene-agenten)
+- [AUTO_TRADING (Trading-Pipeline)](#auto_trading-trading-pipeline)
 - [Projektstruktur](#projektstruktur)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -99,7 +100,8 @@ dem Lizenzwechsel (siehe Git-Log) sind ausschließlich proprietär.
 | **Live-Pfade** | Mainnet finney (Bittensor SDK), Subscan (Wallet), CoinGecko (Markt), GitHub (Repo-Metadata) — alle mit graceful Fallback und `_meta.fallback_reason`-Tagging. |
 | **Sicherheit** | DANGER-Actions geblockt vor Routing. Watch-only SS58-Validierung über `scalecodec`. Bittensor-spezifische Detektoren: PyPI-Typosquats, Coldkey-Swap-Social-Engineering, Validator-Risiko. Externe Texte sanitisiert am Collector-Boundary (OWASP-Agentic-2026 #1). |
 | **Scoring** | 10 Personal-Fit-Kriterien plus chain-derived Competition (basierend auf live `tao_in`-Stake, nicht hardcoded Listen). |
-| **Tests** | **547 default tests grün** + **10 Live-Smoke-Tests** gegen echte Endpoints (`pytest -m network`). |
+| **AUTO_TRADING** | Opt-in Trading-Pipeline (PRs 2A–2J) — paper-default, live nur mit env + keystore + per-strategy opt-in + getippter Bestätigung. Argon2id+AES-GCM-Keystore, Cold-Start Reconciliation, Slippage-Tolerance, Chain-Truth-Verification, Streamlit-Dashboard, Strategy-Plug-in-Framework. Built-ins: `momentum_rotation` + `mean_reversion`. Vollständige Doku: [`docs/auto_trading.md`](docs/auto_trading.md). |
+| **Tests** | **793 default tests grün** + **10 Live-Smoke-Tests** gegen echte Endpoints (`pytest -m network`). |
 | **Distribution** | `pip install -e .` mit Console-Script `tao-swarm`. Lokal-only, kein Cloud-Telemetry. Optional Streamlit-Dashboard. |
 | **Lizenz** | Proprietär — All Rights Reserved. Nutzung nur mit separater schriftlicher Lizenz. |
 
@@ -258,6 +260,116 @@ load_plugins(orch, entry_point_group="tao.agents")
 Plug-ins durchlaufen die **gleiche** ApprovalGate wie Built-ins. Loading ändert kein Trust-Level. DANGER-Tasks werden vor dem Plug-in-Code geblockt — eine Regression-Suite (`tests/test_plugin_loader.py::test_plugin_does_not_get_special_classification_treatment`) lockt das ein.
 
 Vollständige Doku: [`docs/plugins.md`](docs/plugins.md).
+
+---
+
+## AUTO_TRADING (Trading-Pipeline)
+
+Zusätzlich zum Read-Only Multi-Agenten-Swarm gibt es einen
+**opt-in** AUTO_TRADING-Modus, in dem das System echte Bittensor-
+Extrinsics signiert und broadcastet — innerhalb harter, mehrfach
+authentifizierter Limits. **Default ist Paper-Trade**; live geht
+nichts ohne explizite Operator-Zustimmung an mehreren Stellen.
+
+### Architektur
+
+```
+strategy.evaluate(market_state) ──► TradeProposal
+                                        │
+                                        ▼
+        ┌────────────────────── Executor ──────────────────────┐
+        │  KillSwitch  →  Mode  →  PositionCap  →  DailyLoss   │
+        │  (paper-default; live only when all gates pass)      │
+        └──────────────────────────┬───────────────────────────┘
+                                   │ (live path only)
+                                   ▼
+                ┌──────── BittensorSigner ────────┐
+                │ TAO_LIVE_TRADING=1              │
+                │ + signer_factory wired          │
+                │ + StrategyMeta.live_trading=True│
+                └──────────────┬──────────────────┘
+                               ▼
+                  Subtensor.add_stake / unstake / transfer
+                               │
+                               ▼
+                   PaperLedger (audit, paper=False, tx_hash)
+```
+
+Jeder ausgeführte Versuch — paper, live, refused, error — landet
+als Audit-Row im SQLite-Ledger. Failed live attempts bekommen
+`action="<verb>_failed"`; Verification-Mismatches
+`action="<verb>_verification_failed"`.
+
+### Built-in Strategien
+
+| Name | Hypothese |
+|---|---|
+| `momentum_rotation` | Sustained `tao_in`-Flow → continued flow. Stake into rising, unstake from falling. |
+| `mean_reversion` | Sharp short-term swings revert. Unstake from rising, stake into falling. |
+
+Eigene Strategien drop-in über `*_strategy.py` Dateien plus
+`TAO_STRATEGY_PATHS` env-var, oder via `[project.entry-points.
+"tao.strategies"]`. Vollständige Doku:
+[`docs/strategy_plugins.md`](docs/strategy_plugins.md).
+
+### Quick Start (Paper)
+
+```bash
+# 1) Backtest gegen historische Snapshots
+tao-swarm trade backtest \
+    --strategy momentum_rotation \
+    --snapshots ./data/historical_snapshots.json
+
+# 2) Paper-Run gegen Live-Mainnet-Daten
+tao-swarm --live --network finney trade run \
+    --strategy momentum_rotation \
+    --paper \
+    --status-file data/runner_status.json
+
+# 3) Im Dashboard verfolgen
+tao-swarm dashboard
+# → Trading-Tab zeigt Runner-Status + Ledger
+```
+
+### Live-Modus (mit Hot-Wallet)
+
+Für echte Extrinsics auf Mainnet (oder Testnet) brauchst du:
+
+1. Eine **dedizierte Trading-Coldkey** (NIE deine Haupt-Coldkey),
+   gefüllt nur mit dem Cap-Betrag den du verlieren kannst.
+2. Einen verschlüsselten Keystore:
+   ```bash
+   tao-swarm keystore init --path ~/.tao-swarm/live.keystore --label live
+   ```
+3. Die Drei-Stage-Authorisierung:
+   - `export TAO_LIVE_TRADING=1`
+   - `--keystore-path ~/.tao-swarm/live.keystore`
+   - `--live-trading` (setzt StrategyMeta.live_trading=True)
+
+```bash
+tao-swarm --live --network finney trade run \
+    --strategy momentum_rotation \
+    --live --live-trading \
+    --keystore-path ~/.tao-swarm/live.keystore \
+    --reconcile-from-coldkey 5YourTradingColdkeySS58 \
+    --verify-broadcasts \
+    --max-position-tao 1.0 \
+    --max-daily-loss-tao 5.0 \
+    --max-total-tao 10.0 \
+    --status-file data/runner_status.json \
+    --kill-switch-path /run/tao-swarm.kill
+```
+
+Das CLI prompted nach dem Keystore-Passwort (hidden) und verlangt
+dann eine getippte Bestätigung **`I UNDERSTAND`** bevor irgendein
+Extrinsic broadcastet wird.
+
+Kill-Switch: `touch /run/tao-swarm.kill` halt at next tick.
+
+### Operator-Setup-Guide
+
+Schritt-für-Schritt für eine sichere Live-Aktivierung:
+[`docs/auto_trading.md`](docs/auto_trading.md).
 
 ---
 

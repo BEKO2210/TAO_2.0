@@ -84,15 +84,88 @@ constitution. The pivot is being landed in two phases:
   reflect that auto-trading is an opt-in mode (not a forbidden one).
   The "no managed funds, no token, no telemetry" promises stay.
 
-**Step 2 (next PR) — code:**
+**Step 2 — code (landed across PRs 2A–2J):**
 
-- New `tao_swarm.trading/` module isolated from the read-only swarm
-- Strategy plug-in framework with paper-trading default
-- Hot-key custody chosen by the operator (encrypted file / hardware
-  wallet / separate hot key) — the user has not yet decided which
-- `ApprovalGate` extension for the new mode with kill-switch,
-  position cap, daily-loss-limit gates
-- Backtesting harness against historical data first
+The audited execution path under `tao_swarm.trading/` is now
+complete. Paper-trading is the default; live execution requires
+the operator to opt in at three independent layers (env var,
+keystore, per-strategy `live_trading=True`) and pass the executor's
+four-guard chain (kill switch, mode, position cap, daily loss).
+Bittensor's `stake` / `unstake` / `transfer` extrinsics are signed
+on-chain when (and only when) all gates consent.
+
+- **2A — Skeleton** (PR #47). `tao_swarm.trading/` package:
+  `WalletMode`, `KillSwitch`, `PositionCap`, `DailyLossLimit`,
+  `PaperLedger` (SQLite WAL), `Strategy` ABC + `TradeProposal`
+  + `StrategyMeta`, paper-default `Executor`. Live signing path
+  raises `NotImplementedError` until 2E.
+- **2B — Gate routing** (PR #48). `ApprovalGate.auto_trading_status(
+  executor)` returns `(True, "")` only when wallet_mode==AUTO_TRADING,
+  executor present + AUTO_TRADING, kill switch off, daily loss not
+  breached. Position-cap deferred to per-call executor check.
+- **2C — Encrypted keystore** (PR #49). Argon2id (OWASP 2024
+  baseline: t=3, m=64MiB, p=4) + AES-256-GCM. Atomic write
+  (tmp → fsync → rename), `chmod 0o600`. `SignerHandle` is
+  context-managed; seed bytes are zeroed via `ctypes.memset`
+  on exit. Same exception type for wrong password and tampered
+  ciphertext (anti-timing).
+- **2D — Strategy + Backtester** (PR #50). First concrete
+  strategy `MomentumRotationStrategy` (re-stake into rising
+  `tao_in`, unstake from falling). Deterministic backtester
+  computes total P&L, win rate, max drawdown, pseudo-Sharpe over
+  historical snapshot streams.
+- **2E — Live signing** (PR #51). `BittensorSigner` connects
+  `SignerHandle` → `bittensor.Subtensor.add_stake / unstake /
+  transfer`. Three-step authorisation: `TAO_LIVE_TRADING=1` env
+  var + signer factory wired into Executor + strategy's
+  `StrategyMeta.live_trading=True`. Failed live attempts get
+  `action="<verb>_failed"` audit rows; the broadcast itself is
+  surfaced as `BroadcastError`.
+- **2F — Runner + CLI + operator guide** (PR #52).
+  `TradingRunner` is the tick-driven loop: snapshot → strategy →
+  executor; tracks open positions for `current_total_tao`
+  arithmetic; runner-local circuit breaker on consecutive errors.
+  CLI gets `tao-swarm keystore init/info/verify` and
+  `tao-swarm trade backtest/run/status` with a typed-confirmation
+  walkthrough before any live extrinsic is broadcast. New
+  `docs/auto_trading.md` operator setup guide.
+- **2G — Cold-start reconciliation** (PR #53). On the first tick,
+  `TradingRunner` reads on-chain stake for the configured coldkey
+  via `BittensorChainPositionReader` (mirrors the SDK's
+  `get_stake_info_for_coldkey`) and rewrites the in-memory
+  position book. Without this, a process restart would see
+  `current_total_tao=0` and overshoot the cap by the entire
+  already-staked balance. Reconciliation failure halts the runner
+  rather than trade with an unverified book.
+- **2H — Slippage + chain-truth verification** (PR #54).
+  `TradeProposal` grows optional `rate_tolerance` and
+  `allow_partial`; the signer threads them as
+  `safe_staking` / `safe_unstaking` / `allow_partial_stake`
+  kwargs. Optional post-broadcast verification re-reads the
+  chain to confirm the observed delta matches the proposal
+  direction within tolerance; mismatches are recorded as
+  `<verb>_verification_failed` audit rows but do NOT abort
+  the broadcast.
+- **2I — Dashboard + status dump** (PR #55). `TradingRunner.dump_status(
+  path)` writes the current state atomically as JSON each tick.
+  Streamlit "Trading" page replaces the old placeholder: live
+  KPIs, halt/error banners, open positions, last reconcile,
+  ledger summary. Discovery via `TAO_RUNNER_STATUS_FILE` /
+  `TAO_LEDGER_DB` env vars.
+- **2J — Plug-in framework + mean-reversion** (PR #56).
+  `StrategyRegistry` + `load_strategy_plugins(paths=,
+  entry_point_group="tao.strategies")` mirror the existing agent
+  plug-in surface for strategies. Built-in
+  `MeanReversionStrategy` is the inverse-momentum complement to
+  `MomentumRotationStrategy`. Operators drop a `*_strategy.py`
+  file in any directory listed via `TAO_STRATEGY_PATHS` and the
+  CLI picks it up. New `docs/strategy_plugins.md` guide.
+
+What stayed true across all 10 PRs: paper-trade is still the
+default; loading a plug-in does NOT raise its trust level; every
+live attempt — success, refusal, or error — is recorded in the
+SQLite ledger as a non-paper row so the audit trail is complete
+regardless of outcome.
 
 
 
