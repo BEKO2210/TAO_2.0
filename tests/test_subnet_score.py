@@ -81,7 +81,11 @@ def scorer():
 
 @pytest.fixture
 def perfect_subnet():
-    """Subnet data with excellent profile."""
+    """Subnet data with excellent profile.
+
+    PR C added 5 chain-derived criteria — pass full live-quality
+    chain data so a "perfect" subnet really does score perfectly.
+    """
     return make_subnet_data(
         netuid=1,
         github={
@@ -120,6 +124,50 @@ def perfect_subnet():
         reward_history=[
             {"reward": 10.0 + i * 0.1} for i in range(14)
         ],
+        # Chain-derived quality data — well-distributed validators,
+        # active miners, recent owner activity, low weight monoculture,
+        # positive emission flow. Mirrors a healthy live subnet.
+        metagraph={
+            "block": 5_000_000,
+            "neurons": [
+                # 4 validators with relatively even stake (HHI ~ 0.27 → ~73)
+                {"uid": 0, "stake": 1000.0, "validator_permit": True,
+                 "incentive": 0.0, "last_update_block": 5_000_000},
+                {"uid": 1, "stake": 900.0, "validator_permit": True,
+                 "incentive": 0.0, "last_update_block": 5_000_000},
+                {"uid": 2, "stake": 800.0, "validator_permit": True,
+                 "incentive": 0.0, "last_update_block": 5_000_000},
+                {"uid": 3, "stake": 700.0, "validator_permit": True,
+                 "incentive": 0.0, "last_update_block": 5_000_000},
+                # Active miners — all have non-zero incentive + recent updates
+                *[
+                    {"uid": 10 + i, "stake": 50.0, "validator_permit": False,
+                     "incentive": 0.001 * (i + 1),
+                     "last_update_block": 4_999_900 + i}
+                    for i in range(10)
+                ],
+            ],
+            # Weight matrix with low pairwise similarity (no copying).
+            # 4 validators × 14 neurons; orthogonal-ish distributions.
+            "weights": [
+                [1.0 if i == 0 else 0.0 for i in range(14)],
+                [1.0 if i == 1 else 0.0 for i in range(14)],
+                [1.0 if i == 2 else 0.0 for i in range(14)],
+                [1.0 if i == 3 else 0.0 for i in range(14)],
+            ],
+        },
+        taoflow={
+            "net_flow_30d": 5000.0,
+            "share_of_emission_pct": 1.6,  # top decile
+        },
+        owner={
+            "days_since_last_commit": 5,
+            "days_since_last_hparam_change": 12,
+        },
+        hyperparameters={
+            "commit_reveal_weights_enabled": True,
+            "activity_cutoff": 5_000,
+        },
     )
 
 
@@ -446,12 +494,22 @@ def test_weight_sum_equals_1():
 
 
 def test_all_dimensions_have_weights():
-    """All expected dimensions must have weights defined."""
-    expected = [
+    """All expected dimensions must have weights defined.
+
+    PR C added 5 chain-derived criteria on top of the original 10
+    personal-fit ones — the rebalance is documented in
+    ``CRITERIA_WEIGHTS`` itself.
+    """
+    expected_personal_fit = [
         "technical_fit", "hardware_fit", "setup_complexity", "doc_quality",
         "competition", "reward_realism", "maintenance", "security_risk",
         "learning_value", "long_term",
     ]
-    for dim in expected:
+    expected_chain_derived = [
+        "taoflow_health", "validator_concentration",
+        "weight_consensus_divergence", "miner_slot_liveness",
+        "owner_liveness",
+    ]
+    for dim in expected_personal_fit + expected_chain_derived:
         assert dim in CRITERIA_WEIGHTS, f"Missing weight for {dim}"
-    assert len(CRITERIA_WEIGHTS) == 10
+    assert len(CRITERIA_WEIGHTS) == 15

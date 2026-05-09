@@ -11,6 +11,7 @@ Returns a 0-100 score with actionable recommendations.
 
 import json
 import logging
+import math
 import os
 import sqlite3
 import time
@@ -20,16 +21,31 @@ logger = logging.getLogger(__name__)
 
 # Criterion weights (must sum to 1.0)
 CRITERIA_WEIGHTS = {
-    "technical_fit": 0.15,
-    "hardware_fit": 0.15,
-    "setup_complexity": 0.10,
-    "doc_quality": 0.10,
-    "competition": 0.15,
-    "reward_realism": 0.10,
-    "maintenance": 0.10,
-    "security_risk": 0.05,
-    "learning_value": 0.05,
-    "long_term": 0.05,
+    # Personal-fit criteria (kept for backward compat — these reflect
+    # "is this subnet a good fit for ME?" rather than absolute subnet
+    # quality. The online research flagged them as subjective; we
+    # reduced their combined weight from 90% → 50% to make room for
+    # the chain-derived signals below.)
+    "technical_fit": 0.08,
+    "hardware_fit": 0.08,
+    "setup_complexity": 0.05,
+    "doc_quality": 0.06,
+    "competition": 0.07,
+    "reward_realism": 0.06,
+    "maintenance": 0.05,
+    "security_risk": 0.03,
+    "learning_value": 0.01,
+    "long_term": 0.01,
+    # Chain-derived quality criteria (added per online research,
+    # 2025-2026 Bittensor-specific subnet analytics). These read
+    # from the live metagraph + dynamic info + owner activity, so
+    # they only fire when the caller provides chain data (graceful
+    # 50 default otherwise).
+    "taoflow_health": 0.15,             # net stake flow EMA (Taoflow)
+    "validator_concentration": 0.10,    # 1 - HHI on validator stake
+    "weight_consensus_divergence": 0.10,  # 1 - mean pairwise weight cosine
+    "miner_slot_liveness": 0.08,        # active / registered miner ratio
+    "owner_liveness": 0.07,             # owner activity decay (commits + hparam)
 }
 
 # Recommendation thresholds and labels
@@ -439,6 +455,182 @@ class SubnetScorer:
 
         return min(100.0, score)
 
+    # ── Chain-derived criteria (per online research) ────────────────────────
+
+    @staticmethod
+    def _chain_section(data: dict, key: str) -> dict:
+        """Look up a chain-data section under ``data[key]`` or, for
+        consistency with the existing personal-fit scorers,
+        ``data['profile'][key]``. Returns ``{}`` for either-missing."""
+        d = data or {}
+        section = d.get(key)
+        if not section:
+            section = (d.get("profile") or {}).get(key)
+        return section or {}
+
+    def score_taoflow_health(self, data: dict) -> float:
+        """
+        Score the subnet's net TAO staking flow (post-Nov 2025 Taoflow
+        emission regime — flow drives emission share).
+
+        Reads from ``data['taoflow']``:
+          - ``net_flow_30d``: net stake delta over 30 days, in TAO
+          - ``share_of_emission_pct``: 0..100, optional rank signal
+
+        Persistent negative flow = automatic 0. Positive flow scores
+        proportionally to the share of emission. Falls back to 50
+        ("unknown") when no flow data is provided.
+        """
+        flow = self._chain_section(data, "taoflow")
+        if not flow:
+            return 50.0
+        net = float(flow.get("net_flow_30d", 0))
+        if net < 0:
+            return 0.0
+        share = float(flow.get("share_of_emission_pct", 0.0))
+        # Top decile (>= 1.5% of total emission, rough top-10-of-90+) → 100
+        # Below 0.1% → ~30
+        if share <= 0:
+            return 50.0  # we have flow but no rank yet — neutral
+        score = 30.0 + min(70.0, share * 47.0)  # 1.5% share → 100
+        return max(0.0, min(100.0, score))
+
+    def score_validator_concentration(self, data: dict) -> float:
+        """
+        Score validator-stake concentration on the subnet.
+
+        Reads from ``data['metagraph']['neurons']`` — picks neurons
+        with ``validator_permit=True``, computes HHI on their stake
+        share, returns ``100 * (1 - HHI)`` clamped. HHI < 0.1 → 100,
+        HHI > 0.5 → 10. The arXiv 2507.02951 paper found median
+        validator-stake Gini = 0.977 across 64 subnets, so this
+        criterion captures real cross-subnet variation.
+        """
+        mg = self._chain_section(data, "metagraph")
+        neurons = mg.get("neurons") or []
+        validators = [n for n in neurons if n.get("validator_permit")]
+        if len(validators) < 2:
+            return 50.0  # Not enough data — neutral
+        stakes = [float(n.get("stake", 0)) for n in validators]
+        total = sum(stakes)
+        if total <= 0:
+            return 50.0
+        shares = [s / total for s in stakes]
+        hhi = sum(sh * sh for sh in shares)
+        # HHI ranges from 1/n (perfectly even) to 1 (single validator).
+        # Map: HHI = 0.1 → ~90, HHI = 0.5 → ~50, HHI = 1.0 → 0
+        return max(0.0, min(100.0, round(100.0 * (1.0 - hhi), 2)))
+
+    def score_weight_consensus_divergence(self, data: dict) -> float:
+        """
+        Score how much validators' weight vectors disagree with each
+        other. High mean pairwise cosine similarity ≈ weight copying
+        / monoculture (the Opentensor weight-copier paper).
+
+        Reads from ``data['metagraph']`` — when ``weights`` (V × N
+        matrix) is present, compute mean off-diagonal cosine
+        similarity; lower = healthier. Apply a +20 bonus when the
+        subnet has commit-reveal enabled
+        (``data['hyperparameters']['commit_reveal_weights_enabled']``).
+
+        Falls back to 50 when the weight matrix wasn't pulled (the
+        cheap ``metagraph(lite=True)`` path skips it on purpose).
+        """
+        mg = self._chain_section(data, "metagraph")
+        weights = mg.get("weights")
+        if not weights:
+            return 50.0
+        # weights: list of lists (V x N) of floats
+        rows = [list(w) for w in weights if w]
+        if len(rows) < 2:
+            return 50.0
+        # Compute pairwise cosine similarity, average off-diagonal.
+        sims: list[float] = []
+        for i in range(len(rows)):
+            for j in range(i + 1, len(rows)):
+                a, b = rows[i], rows[j]
+                if len(a) != len(b):
+                    continue
+                dot = sum(x * y for x, y in zip(a, b))
+                norm_a = math.sqrt(sum(x * x for x in a))
+                norm_b = math.sqrt(sum(y * y for y in b))
+                if norm_a == 0 or norm_b == 0:
+                    continue
+                sims.append(dot / (norm_a * norm_b))
+        if not sims:
+            return 50.0
+        mean_sim = sum(sims) / len(sims)
+        # Map: mean_sim = 0.6 → 100, 0.95 → 0
+        if mean_sim < 0.6:
+            score = 100.0
+        elif mean_sim > 0.95:
+            score = 0.0
+        else:
+            score = 100.0 * (1.0 - (mean_sim - 0.6) / 0.35)
+        # Bonus for commit-reveal
+        hparams = self._chain_section(data, "hyperparameters")
+        if hparams.get("commit_reveal_weights_enabled"):
+            score += 20.0
+        return max(0.0, min(100.0, round(score, 2)))
+
+    def score_miner_slot_liveness(self, data: dict) -> float:
+        """
+        Score the ratio of *active* miners to *registered* miner UIDs.
+
+        A subnet where slots are squatted by inactive UIDs is
+        capturing emissions for zombies — bad for new miners and a
+        red flag for subnet health.
+
+        Reads from ``data['metagraph']['neurons']`` (with
+        ``validator_permit=False`` filter), computes the share with
+        non-zero ``incentive`` AND recent ``last_update_block``
+        (within ``activity_cutoff`` blocks of ``current_block``).
+        """
+        mg = self._chain_section(data, "metagraph")
+        neurons = mg.get("neurons") or []
+        miners = [n for n in neurons if not n.get("validator_permit")]
+        if not miners:
+            return 50.0
+        current_block = int(mg.get("block", 0)) or int(
+            (data or {}).get("current_block", 0)
+            or (data or {}).get("profile", {}).get("current_block", 0)
+        )
+        cutoff = int(self._chain_section(data, "hyperparameters").get(
+            "activity_cutoff", 5_000
+        ))
+        active = 0
+        for m in miners:
+            if float(m.get("incentive", 0)) <= 0:
+                continue
+            last = int(m.get("last_update_block", 0))
+            if current_block and (current_block - last) > cutoff:
+                continue
+            active += 1
+        ratio = active / len(miners)
+        return round(100.0 * ratio, 2)
+
+    def score_owner_liveness(self, data: dict) -> float:
+        """
+        Score how recently the subnet owner has been active —
+        commits, hyperparameter changes, weight-setting extrinsics.
+
+        Reads from ``data['owner']``:
+          - ``days_since_last_commit``: int
+          - ``days_since_last_hparam_change``: int
+
+        Composite: ``100 - min(100, commit_days + hparam_days/2)``.
+        Below 30 → likely abandoned subnet still drawing emissions.
+        Falls back to 50 when no owner data is present.
+        """
+        owner = self._chain_section(data, "owner")
+        if not owner:
+            return 50.0
+        commit_days = float(owner.get("days_since_last_commit", 365))
+        hparam_days = float(owner.get("days_since_last_hparam_change", 365))
+        decay = commit_days + hparam_days / 2.0
+        score = 100.0 - min(100.0, decay)
+        return max(0.0, round(score, 2))
+
     # ── Composite scoring ───────────────────────────────────────────────────
 
     def score_subnet(self, subnet_data: dict) -> dict:
@@ -454,7 +646,11 @@ class SubnetScorer:
         """
         netuid = subnet_data.get("netuid", 0)
 
-        # Score all criteria
+        # Score all criteria — the original 10 personal-fit metrics
+        # plus the 5 chain-derived quality criteria added per the
+        # online research. Chain criteria default to 50 ("unknown")
+        # when the caller didn't pass metagraph / taoflow / owner
+        # data, so existing callers keep working.
         scores = {
             "technical_fit": self.score_technical_fit(subnet_data),
             "hardware_fit": self.score_hardware_fit(subnet_data),
@@ -466,6 +662,11 @@ class SubnetScorer:
             "security_risk": self.score_security_risk(subnet_data),
             "learning_value": self.score_learning_value(subnet_data),
             "long_term": self.score_long_term(subnet_data),
+            "taoflow_health": self.score_taoflow_health(subnet_data),
+            "validator_concentration": self.score_validator_concentration(subnet_data),
+            "weight_consensus_divergence": self.score_weight_consensus_divergence(subnet_data),
+            "miner_slot_liveness": self.score_miner_slot_liveness(subnet_data),
+            "owner_liveness": self.score_owner_liveness(subnet_data),
         }
 
         # Weighted total
