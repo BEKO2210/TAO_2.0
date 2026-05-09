@@ -18,6 +18,11 @@ from src.orchestrator.plugin_loader import (
     PluginLoadSummary,
     load_plugins,
 )
+from src.orchestrator.resilience import (
+    CancelToken,
+    RetryPolicy,
+    TaskTimeoutError,
+)
 from src.orchestrator.task_router import TaskRouter
 from src.orchestrator.orchestrator import SwarmOrchestrator
 
@@ -27,6 +32,9 @@ __all__ = [
     "TaskRouter",
     "SwarmOrchestrator",
     "AgentContext",
+    "CancelToken",
+    "RetryPolicy",
+    "TaskTimeoutError",
     "load_plugins",
     "PluginLoadSummary",
     "ON_CONFLICT_SKIP",
