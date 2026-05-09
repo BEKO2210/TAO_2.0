@@ -18,8 +18,8 @@ import types
 
 import pytest
 
-import src.collectors.chain_readonly as chain_module
-from src.collectors.chain_readonly import ChainReadOnlyCollector
+import tao_swarm.collectors.chain_readonly as chain_module
+from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
 
 # ---------------------------------------------------------------------------
 # Mock-mode (default) — runs offline, hits no network

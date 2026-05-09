@@ -193,14 +193,14 @@ def status(ctx):
     click.echo(f"Platform: {sys.platform}")
 
     # Module status (importable check, not filesystem-path check —
-    # ``Path("src.collectors")`` looks for a literal dotted directory
+    # ``Path("tao_swarm.collectors")`` looks for a literal dotted directory
     # name and always reports "not found" even when the package is
     # importable, which the previous implementation did).
     import importlib.util as _ilu
     modules = [
-        ("Collectors", "src.collectors"),
-        ("Scoring", "src.scoring"),
-        ("Dashboard", "src.dashboard"),
+        ("Collectors", "tao_swarm.collectors"),
+        ("Scoring", "tao_swarm.scoring"),
+        ("Dashboard", "tao_swarm.dashboard"),
     ]
     click.echo("\nModules:")
     for name, mod_path in modules:
@@ -278,7 +278,7 @@ def check(ctx):
 def subnets(ctx, limit, json_output):
     """List all Bittensor subnets."""
     try:
-        from src.collectors.chain_readonly import ChainReadOnlyCollector
+        from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
     except ImportError:
         from collectors.chain_readonly import ChainReadOnlyCollector
 
@@ -353,8 +353,8 @@ def subnets(ctx, limit, json_output):
 def score(ctx, netuid, detailed, json_output):
     """Score a specific subnet by netuid."""
     try:
-        from src.collectors.subnet_metadata import SubnetMetadataCollector
-        from src.scoring.subnet_score import SubnetScorer
+        from tao_swarm.collectors.subnet_metadata import SubnetMetadataCollector
+        from tao_swarm.scoring.subnet_score import SubnetScorer
     except ImportError:
         from collectors.subnet_metadata import SubnetMetadataCollector
         from scoring.subnet_score import SubnetScorer
@@ -414,7 +414,7 @@ def score(ctx, netuid, detailed, json_output):
 def watch(ctx, address, label):
     """Watch a wallet address (read-only)."""
     try:
-        from src.collectors.wallet_watchonly import WalletWatchOnlyCollector
+        from tao_swarm.collectors.wallet_watchonly import WalletWatchOnlyCollector
     except ImportError:
         from collectors.wallet_watchonly import WalletWatchOnlyCollector
 
@@ -469,7 +469,7 @@ def watch(ctx, address, label):
 def unwatch(ctx, address):
     """Stop watching a wallet address."""
     try:
-        from src.collectors.wallet_watchonly import WalletWatchOnlyCollector
+        from tao_swarm.collectors.wallet_watchonly import WalletWatchOnlyCollector
     except ImportError:
         from collectors.wallet_watchonly import WalletWatchOnlyCollector
 
@@ -496,7 +496,7 @@ def unwatch(ctx, address):
 def market(ctx, days, json_output):
     """Show TAO market data."""
     try:
-        from src.collectors.market_data import MarketDataCollector
+        from tao_swarm.collectors.market_data import MarketDataCollector
     except ImportError:
         from collectors.market_data import MarketDataCollector
 
@@ -571,7 +571,7 @@ def market(ctx, days, json_output):
 def risk(ctx, subnet, repo, json_output):
     """Show risk review."""
     try:
-        from src.scoring.risk_score import RiskScorer
+        from tao_swarm.scoring.risk_score import RiskScorer
     except ImportError:
         from scoring.risk_score import RiskScorer
 
@@ -712,7 +712,7 @@ def run(ctx, agent, task, dry_run):
 
     # Lazy import — keeps the CLI smoke-light when this command isn't called.
     try:
-        from src.agents import (
+        from tao_swarm.agents import (
             DashboardDesignAgent,
             DocumentationAgent,
             FullstackDevAgent,
@@ -729,7 +729,7 @@ def run(ctx, agent, task, dry_run):
             ValidatorEngineeringAgent,
             WalletWatchAgent,
         )
-        from src.orchestrator import SwarmOrchestrator, load_plugins
+        from tao_swarm.orchestrator import SwarmOrchestrator, load_plugins
     except ImportError as exc:
         click.echo(click.style(
             f"  Import failed: {exc}", fg="red",
@@ -821,7 +821,7 @@ def report(ctx, report_type, output, output_format, subnet):
 
     if report_type == "subnet" and subnet:
         try:
-            from src.scoring.subnet_score import SubnetScorer
+            from tao_swarm.scoring.subnet_score import SubnetScorer
         except ImportError:
             from scoring.subnet_score import SubnetScorer
 
@@ -894,7 +894,7 @@ def dashboard(ctx, port, host, no_browser):
     """Start the Streamlit dashboard."""
     click.echo(click.style("\n=== Starting Dashboard ===", fg="blue", bold=True))
 
-    dashboard_path = Path("src/dashboard/app.py")
+    dashboard_path = Path("tao_swarm/dashboard/app.py")
     if not dashboard_path.exists():
         click.echo(click.style("  Dashboard not found at src/dashboard/app.py", fg="red"))
         sys.exit(1)
@@ -937,7 +937,7 @@ def capabilities(ctx, json_output, plugin_paths):
     now and which agent handles each one.
     """
     try:
-        from src.agents import (
+        from tao_swarm.agents import (
             DashboardDesignAgent,
             DocumentationAgent,
             FullstackDevAgent,
@@ -954,7 +954,7 @@ def capabilities(ctx, json_output, plugin_paths):
             ValidatorEngineeringAgent,
             WalletWatchAgent,
         )
-        from src.orchestrator import SwarmOrchestrator, load_plugins
+        from tao_swarm.orchestrator import SwarmOrchestrator, load_plugins
     except ImportError as exc:
         click.echo(click.style(f"Import failed: {exc}", fg="red"), err=True)
         raise click.Abort()

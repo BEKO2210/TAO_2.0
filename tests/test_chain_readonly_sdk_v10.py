@@ -20,8 +20,8 @@ from typing import Any
 
 import pytest
 
-import src.collectors.chain_readonly as chain_module
-from src.collectors.chain_readonly import (
+import tao_swarm.collectors.chain_readonly as chain_module
+from tao_swarm.collectors.chain_readonly import (
     _DEFAULT_FALLBACK_ENDPOINTS,
     _WRITE_METHODS_DENYLIST,
     ChainReadOnlyCollector,

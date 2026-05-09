@@ -13,13 +13,13 @@ real specs; explicit config still wins; safety properties hold.
 
 from __future__ import annotations
 
-from src.agents import (
+from tao_swarm.agents import (
     MinerEngineeringAgent,
     SystemCheckAgent,
     ValidatorEngineeringAgent,
 )
-from src.agents._hardware import hardware_profile_from_context
-from src.orchestrator import AgentContext, SwarmOrchestrator
+from tao_swarm.agents._hardware import hardware_profile_from_context
+from tao_swarm.orchestrator import AgentContext, SwarmOrchestrator
 
 # ---------------------------------------------------------------------------
 # Shared adapter unit-level

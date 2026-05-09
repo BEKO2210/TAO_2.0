@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 
-from src.agents.documentation_agent import DocumentationAgent
+from tao_swarm.agents.documentation_agent import DocumentationAgent
 
 
 def _agent_names_from_line_block(rendered: str) -> list[str]:

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.orchestrator import (
+from tao_swarm.orchestrator import (
     ON_CONFLICT_ERROR,
     ON_CONFLICT_REPLACE,
     ON_CONFLICT_SKIP,

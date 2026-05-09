@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import json
 
-from src.agents.training_experiment_agent import TrainingExperimentAgent
-from src.orchestrator import SwarmOrchestrator
-from src.orchestrator.approval_gate import Classification
+from tao_swarm.agents.training_experiment_agent import TrainingExperimentAgent
+from tao_swarm.orchestrator import SwarmOrchestrator
+from tao_swarm.orchestrator.approval_gate import Classification
 
 # ---------------------------------------------------------------------------
 # B1 — TrainingExperimentAgent must run end-to-end without raising
@@ -78,7 +78,7 @@ def test_blocked_plan_note_is_human_readable():
 
 def test_success_result_classification_is_plain_string():
     """Even on the happy path, classification must serialize cleanly."""
-    from src.agents import SystemCheckAgent
+    from tao_swarm.agents import SystemCheckAgent
 
     orch = SwarmOrchestrator({"use_mock_data": True})
     orch.register_agent(SystemCheckAgent({"use_mock_data": True}))

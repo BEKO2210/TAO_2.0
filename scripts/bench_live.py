@@ -51,8 +51,9 @@ def _gate_or_exit() -> None:
 
 def _bench_chain(tmp_dir: Path) -> Benchmark | None:
     """Time a fresh ``get_subnet_list`` against finney."""
-    from src.collectors.chain_readonly import (
-        ChainReadOnlyCollector, _try_import_bittensor,
+    from tao_swarm.collectors.chain_readonly import (
+        ChainReadOnlyCollector,
+        _try_import_bittensor,
     )
     if _try_import_bittensor() is None:
         print("  [skip] bittensor SDK not installed — `pip install bittensor`")
@@ -84,7 +85,7 @@ def _bench_chain(tmp_dir: Path) -> Benchmark | None:
 
 
 def _bench_market(tmp_dir: Path) -> Benchmark | None:
-    from src.collectors.market_data import MarketDataCollector
+    from tao_swarm.collectors.market_data import MarketDataCollector
     db = tmp_dir / "market.db"
     with Benchmark("market_data.get_tao_price (coingecko)", iterations=3) as b:
         for _ in range(b.iterations):
@@ -109,7 +110,7 @@ def _bench_market(tmp_dir: Path) -> Benchmark | None:
 def _bench_github(tmp_dir: Path) -> Benchmark | None:
     """Time an unauthenticated GitHub repo lookup. Capped at 5 calls
     so we don't burn through the 60/hr unauth rate limit."""
-    from src.collectors.github_repos import GitHubRepoCollector
+    from tao_swarm.collectors.github_repos import GitHubRepoCollector
     db = tmp_dir / "github.db"
     with Benchmark("github_repos.get_repo_info (unauth)", iterations=3) as b:
         for _ in range(b.iterations):

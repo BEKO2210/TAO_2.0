@@ -24,7 +24,7 @@ import json
 
 import pytest
 
-from src.agents import (
+from tao_swarm.agents import (
     DashboardDesignAgent,
     DocumentationAgent,
     FullstackDevAgent,
@@ -40,7 +40,7 @@ from src.agents import (
     ValidatorEngineeringAgent,
     WalletWatchAgent,
 )
-from src.orchestrator import SwarmOrchestrator
+from tao_swarm.orchestrator import SwarmOrchestrator
 
 REQUIRED_ORCH_FIELDS: set[str] = {
     "status",

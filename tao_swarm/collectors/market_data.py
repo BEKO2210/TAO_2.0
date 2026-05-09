@@ -14,7 +14,7 @@ import time
 
 import requests
 
-from src.collectors._base import BaseCollector
+from tao_swarm.collectors._base import BaseCollector
 
 logger = logging.getLogger(__name__)
 

@@ -21,13 +21,13 @@ The canonical product spec is `SPEC.md`; the swarm constitution is `KIMI.md`. Re
 ├── requirements.txt / requirements-dev.txt
 ├── .env.example                       # Copy to .env (never commit .env)
 ├── docs/                              # Architecture, methods, run log, plan
-├── src/
+├── tao_swarm/
 │   ├── orchestrator/  approval_gate.py · task_router.py · orchestrator.py
 │   ├── agents/        15 *_agent.py modules (see SPEC.md)
 │   ├── collectors/    chain_readonly · subnet_metadata · market_data · wallet_watchonly · github_repos
 │   ├── scoring/       subnet · risk · trade_risk · miner_readiness · validator_readiness
 │   ├── dashboard/     app.py
-│   └── cli/           tao_swarm.py
+│   └── cli/           tao_swarm.py        # console-script: ``tao-swarm``
 ├── tests/             pytest suite
 └── _templates/        Hygen scaffolding templates
 ```
@@ -47,7 +47,7 @@ If a change could weaken any of these rules, stop and ask.
 
 ## Agent interface contract
 
-Every agent in `src/agents/` must implement:
+Every agent in `tao_swarm/agents/` must implement:
 
 ```python
 AGENT_NAME    = "<snake_case_name>"
@@ -67,7 +67,7 @@ class <Pascal>Agent:
 `run()` returns a **flat dict** with at least a top-level `status` key. Agent-specific report fields sit alongside it. Do **not** wrap the payload in a `result` key — the orchestrator already wraps the whole return value under `output`, and carries the agent's per-call `status` up as `agent_result_status` for easy access.
 
 ```python
-# Good: flat, with status — matches the existing src/agents/ majority.
+# Good: flat, with status — matches the existing tao_swarm/agents/ majority.
 return {"status": "complete", "verdict": "PROCEED", "findings": [], "timestamp": time.time()}
 
 # Avoid: nesting under result wraps once more on top of the orchestrator wrap.
@@ -82,9 +82,9 @@ Hygen templates live in `_templates/` and enforce the conventions above.
 
 ```bash
 npm install                # one-time
-npx hygen agent new        # interactive: creates src/agents/<name>_agent.py + tests/test_<name>_agent.py
-npx hygen collector new    # creates src/collectors/<name>.py
-npx hygen scoring new      # creates src/scoring/<name>_score.py + tests/test_<name>_score.py
+npx hygen agent new        # interactive: creates tao_swarm/agents/<name>_agent.py + tests/test_<name>_agent.py
+npx hygen collector new    # creates tao_swarm/collectors/<name>.py
+npx hygen scoring new      # creates tao_swarm/scoring/<name>_score.py + tests/test_<name>_score.py
 npx hygen test new         # creates tests/test_<name>.py (variants per kind)
 npx hygen doc new          # creates docs/<name>.md
 npx hygen plugin new       # external plug-in scaffold (lives OUTSIDE this repo)
@@ -93,7 +93,7 @@ npx hygen plugin new       # external plug-in scaffold (lives OUTSIDE this repo)
 ## Plug-ins (user-defined external agents)
 
 Users add their own agents via
-`src/orchestrator.load_plugins(orch, paths=[...], entry_point_group="tao.agents")`.
+`tao_swarm.orchestrator.load_plugins(orch, paths=[...], entry_point_group="tao.agents")`.
 Plug-ins must obey the SPEC.md agent contract (run / get_status /
 validate_input + AGENT_NAME / AGENT_VERSION) and are routed through
 the same `ApprovalGate` as built-ins — loading a plug-in does **not**
@@ -102,7 +102,7 @@ raise its trust level. Full guide in `docs/plugins.md`; scaffold via
 
 Aliases: `npm run new:agent`, `npm run new:collector`, `npm run new:scoring`, `npm run new:test`, `npm run new:doc`.
 
-After generating, register the new agent in `src/agents/__init__.py` (and the analogue for collectors / scoring).
+After generating, register the new agent in `tao_swarm/agents/__init__.py` (and the analogue for collectors / scoring).
 
 ## Common dev commands
 
@@ -120,7 +120,7 @@ make lint
 make format
 
 # CLI
-python -m src.cli.tao_swarm --help
+tao-swarm --help
 ```
 
 If `make` is available, prefer it over the raw commands above — `Makefile` is the source of truth for project automation.

@@ -393,7 +393,7 @@ evaluation logic, checks stake requirements, and performs code
 
     def _hardware_profile_from_context(self) -> dict:
         """Adapter shim — see ``src/agents/_hardware.py`` for details."""
-        from src.agents._hardware import hardware_profile_from_context
+        from tao_swarm.agents._hardware import hardware_profile_from_context
         return hardware_profile_from_context(self)
 
     def _check_stake_sufficiency(self, netuid: int) -> dict:

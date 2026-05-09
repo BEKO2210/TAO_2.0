@@ -1,16 +1,21 @@
-# pyproject.toml — TAO_2.0
+# pyproject.toml — tao_swarm
 #
-# This file is currently used as the single source of truth for project
-# metadata and tool configuration (ruff, mypy, pytest). It does NOT
-# declare a [build-system] yet because the package layout uses ``src/``
-# as the top-level Python package, which doesn't lend itself cleanly
-# to ``pip install`` without an invasive rename. That layout migration
-# is tracked separately; until it lands, install with::
+# After the src/ → tao_swarm/ layout migration this file is now the
+# canonical install path. Users get a real ``pip install`` plus the
+# ``tao-swarm`` console script:
 #
+#     pip install -e .          # from the repo
 #     pip install -r requirements.txt -r requirements-dev.txt
+#     tao-swarm --help
 #
-# and run via the ``Makefile`` targets or the ``python -m src.cli.tao_swarm``
-# entry point.
+# Runtime deps still live in ``requirements.txt`` for now to stay
+# compatible with the Docker setup; we intentionally leave
+# ``[project.dependencies]`` empty until that lockfile is migrated
+# in a follow-up.
+
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
 
 [project]
 name = "tao-swarm"
@@ -35,13 +40,15 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-# Runtime deps live in requirements.txt to stay compatible with the
-# existing Makefile and Docker setup. When the layout migration lands,
-# this section will be promoted to the source of truth.
+[project.scripts]
+tao-swarm = "tao_swarm.cli.tao_swarm:cli"
 
 [project.urls]
 Repository = "https://github.com/BEKO2210/TAO_2.0"
 Issues = "https://github.com/BEKO2210/TAO_2.0/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tao_swarm"]
 
 # ---------------------------------------------------------------------------
 # Tool configuration

@@ -13,7 +13,7 @@ non-negotiable safety rules:
 
 import pytest
 
-from src.agents.wallet_watch_agent import WalletWatchAgent
+from tao_swarm.agents.wallet_watch_agent import WalletWatchAgent
 
 # ---------------------------------------------------------------------------
 # Fixtures

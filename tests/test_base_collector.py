@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.collectors._base import BaseCollector
-from src.collectors.github_repos import GitHubRepoCollector
-from src.collectors.market_data import MarketDataCollector
+from tao_swarm.collectors._base import BaseCollector
+from tao_swarm.collectors.github_repos import GitHubRepoCollector
+from tao_swarm.collectors.market_data import MarketDataCollector
 
 # ---------------------------------------------------------------------------
 # BaseCollector unit-level
@@ -116,15 +116,15 @@ def test_market_default_mock_returns_fixture(tmp_path):
     "name,builder",
     [
         ("chain_readonly", lambda tmp: __import__(
-            "src.collectors.chain_readonly", fromlist=["ChainReadOnlyCollector"],
+            "tao_swarm.collectors.chain_readonly", fromlist=["ChainReadOnlyCollector"],
         ).ChainReadOnlyCollector({"db_path": str(tmp / "c.db")})),
         ("github_repos", lambda tmp: GitHubRepoCollector({"db_path": str(tmp / "g.db")})),
         ("market_data", lambda tmp: MarketDataCollector({"db_path": str(tmp / "m.db")})),
         ("subnet_metadata", lambda tmp: __import__(
-            "src.collectors.subnet_metadata", fromlist=["SubnetMetadataCollector"],
+            "tao_swarm.collectors.subnet_metadata", fromlist=["SubnetMetadataCollector"],
         ).SubnetMetadataCollector({"db_path": str(tmp / "s.db")})),
         ("wallet_watchonly", lambda tmp: __import__(
-            "src.collectors.wallet_watchonly", fromlist=["WalletWatchOnlyCollector"],
+            "tao_swarm.collectors.wallet_watchonly", fromlist=["WalletWatchOnlyCollector"],
         ).WalletWatchOnlyCollector({"db_path": str(tmp / "w.db")})),
     ],
 )

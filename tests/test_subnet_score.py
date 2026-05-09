@@ -12,7 +12,7 @@ Tests cover:
 
 import pytest
 
-from src.scoring.subnet_score import CRITERIA_WEIGHTS, SubnetScorer
+from tao_swarm.scoring.subnet_score import CRITERIA_WEIGHTS, SubnetScorer
 
 # ---------------------------------------------------------------------------
 # Helpers

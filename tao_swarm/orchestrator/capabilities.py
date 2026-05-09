@@ -18,7 +18,7 @@ but agents stop being implicit and become **self-describing**.
 
 Usage in an agent module:
 
-    from src.orchestrator.capabilities import Capability
+    from tao_swarm.orchestrator.capabilities import Capability
 
     AGENT_NAME = "subnet_scoring_agent"
     AGENT_VERSION = "1.0.0"

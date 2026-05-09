@@ -13,7 +13,7 @@ import json
 import pytest
 from click.testing import CliRunner
 
-from src.cli.tao_swarm import _config, cli
+from tao_swarm.cli.tao_swarm import _config, cli
 
 # ---------------------------------------------------------------------------
 # _config: mode resolution
@@ -136,7 +136,7 @@ def test_live_request_without_sdk_shows_fallback_warning(tmp_path, monkeypatch):
     that's how the user knows their --live flag didn't actually take."""
     monkeypatch.chdir(tmp_path)
     # Force the import path to return None, simulating a clean env
-    import src.collectors.chain_readonly as chain_module
+    import tao_swarm.collectors.chain_readonly as chain_module
     monkeypatch.setattr(chain_module, "_try_import_bittensor", lambda: None)
 
     result = _run("--live", "subnets", "--limit", "1")

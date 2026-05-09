@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import time
 
-from src.orchestrator import SwarmOrchestrator
-from src.orchestrator.capabilities import Capability, discover_capabilities
-from src.orchestrator.progress import _OrchestratorProgressChannel
+from tao_swarm.orchestrator import SwarmOrchestrator
+from tao_swarm.orchestrator.capabilities import Capability, discover_capabilities
+from tao_swarm.orchestrator.progress import _OrchestratorProgressChannel
 
 # ---------------------------------------------------------------------------
 # Capability dataclass + discover_capabilities
@@ -283,7 +283,7 @@ def test_plugin_declared_capabilities_become_routable(tmp_path):
     """A user plug-in (loaded via load_plugins) gets its
     AGENT_CAPABILITIES auto-registered just like a built-in."""
     src = '''
-from src.orchestrator.capabilities import Capability
+from tao_swarm.orchestrator.capabilities import Capability
 
 AGENT_NAME = "fish_plugin_agent"
 AGENT_VERSION = "0.1.0"
@@ -304,7 +304,7 @@ class FishPluginAgent:
 '''
     (tmp_path / "fish_plugin_agent.py").write_text(src)
 
-    from src.orchestrator import load_plugins
+    from tao_swarm.orchestrator import load_plugins
     orch = SwarmOrchestrator({"use_mock_data": True})
     summary = load_plugins(orch, paths=[tmp_path], entry_point_group=None)
 

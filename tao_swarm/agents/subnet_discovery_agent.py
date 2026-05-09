@@ -283,7 +283,7 @@ class SubnetDiscoveryAgent:
     def _get_chain_collector(self) -> Any:
         """Lazy chain-collector init so tests can run without a chain."""
         if self._chain_collector is None:
-            from src.collectors.chain_readonly import ChainReadOnlyCollector
+            from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
             chain_cfg = {
                 "use_mock_data": self.config.get("use_mock_data", True),
                 "network": self.config.get("network", "mock"),

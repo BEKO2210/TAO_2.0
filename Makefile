@@ -28,7 +28,7 @@ DOCKER_IMAGE := tao-bittensor-agents
 DOCKER_TAG := latest
 
 # Projekt-Pfade
-SRC_DIR := src
+SRC_DIR := tao_swarm
 TESTS_DIR := tests
 DATA_DIR := data
 LOGS_DIR := logs
@@ -155,7 +155,7 @@ test-verbose: ## Tests mit ausfuehrlicher Ausgabe
 test-coverage: ## Test-Coverage-Bericht erstellen
 	@echo "$(GREEN)>>> Erstelle Coverage-Bericht...$(RESET)"
 	@test -d $(VENV_DIR) || (echo "$(RED)Venv nicht gefunden.$(RESET)" && exit 1)
-	@cd $(SRC_DIR) && $(VENV_PYTHON) -m pytest $(TESTS_DIR)/ --cov=$(SRC_DIR) --cov-report=html --cov-report=term-missing
+	@cd $(SRC_DIR) && $(VENV_PYTHON) -m pytest $(TESTS_DIR)/ --cov=tao_swarm --cov-report=html --cov-report=term-missing
 	@echo "$(GREEN)>>> Coverage-Bericht: htmlcov/index.html$(RESET)"
 
 bench: ## Alle Benchmarks ausfuehren (mock mode, no network)

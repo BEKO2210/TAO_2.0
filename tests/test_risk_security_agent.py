@@ -11,7 +11,7 @@ The fix introduces an ``INSUFFICIENT_DATA`` verdict and threads a
 
 from __future__ import annotations
 
-from src.agents.risk_security_agent import RiskSecurityAgent
+from tao_swarm.agents.risk_security_agent import RiskSecurityAgent
 
 # ---------------------------------------------------------------------------
 # Empty-input paths must NOT produce PROCEED
