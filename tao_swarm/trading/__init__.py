@@ -61,6 +61,11 @@ from tao_swarm.trading.keystore import (
 )
 from tao_swarm.trading.ledger import PaperLedger, TradeRecord
 from tao_swarm.trading.modes import WalletMode
+from tao_swarm.trading.runner import (
+    MarketStateBuilder,
+    RunnerStatus,
+    TradingRunner,
+)
 from tao_swarm.trading.signer import (
     LIVE_TRADING_ENV,
     LIVE_TRADING_MAGIC_VALUE,
@@ -93,8 +98,10 @@ __all__ = [
     "KeystoreFormatError",
     "KeystoreInfo",
     "LiveSignerError",
+    "MarketStateBuilder",
     "PaperLedger",
     "PositionCap",
+    "RunnerStatus",
     "SignerConfigError",
     "SignerHandle",
     "Strategy",
@@ -102,6 +109,7 @@ __all__ = [
     "SubmitReceipt",
     "TradeProposal",
     "TradeRecord",
+    "TradingRunner",
     "WalletMode",
     "WrongPasswordError",
     "authorise_live_trade",
