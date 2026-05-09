@@ -240,6 +240,187 @@ tao-swarm dashboard          # Premium-UI auf :8501</code></pre>
   </div>
 </section>
 
+<section id="live" class="section section-alt">
+  <div class="section-inner">
+    <div class="section-head reveal">
+      <span class="kicker">Live in action</span>
+      <h2>Was es jede Minute wirklich tut.</h2>
+      <p class="subhead">Simulierter Tick: live ``tao_in`` Flow links, die Equity-Curve die der Runner aufbaut rechts. Echte Screenshots ersetzen das hier sobald du den Bot eine Woche laufen hast.</p>
+    </div>
+    <div class="live-demo reveal">
+      <div>
+        <div class="live-ticker-head">
+          <span class="live-dot"></span>
+          <span>Live-Tick · finney mainnet · simuliert</span>
+        </div>
+        <div class="live-ticker">
+          <div class="live-ticker-stream">
+            <div class="live-ticker-row"><span class="lt-id">#1</span><span class="lt-name">Apex</span><span class="lt-tao">28,385 τ</span><span class="lt-delta lt-up">+1.36%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#4</span><span class="lt-name">Targon</span><span class="lt-tao">133,561 τ</span><span class="lt-delta lt-down">−0.94%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#8</span><span class="lt-name">Vanta</span><span class="lt-tao">85,632 τ</span><span class="lt-delta lt-up">+0.42%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#64</span><span class="lt-name">Chutes</span><span class="lt-tao">201,143 τ</span><span class="lt-delta lt-up">+5.11%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#7</span><span class="lt-name">SubVortex</span><span class="lt-tao">14,890 τ</span><span class="lt-delta lt-flat">0.00%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#2</span><span class="lt-name">DSperse</span><span class="lt-tao">10,600 τ</span><span class="lt-delta lt-down">−2.18%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#1</span><span class="lt-name">Apex</span><span class="lt-tao">28,512 τ</span><span class="lt-delta lt-up">+0.45%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#4</span><span class="lt-name">Targon</span><span class="lt-tao">132,802 τ</span><span class="lt-delta lt-down">−0.57%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#8</span><span class="lt-name">Vanta</span><span class="lt-tao">86,011 τ</span><span class="lt-delta lt-up">+0.44%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#64</span><span class="lt-name">Chutes</span><span class="lt-tao">211,422 τ</span><span class="lt-delta lt-up">+5.11%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#7</span><span class="lt-name">SubVortex</span><span class="lt-tao">14,890 τ</span><span class="lt-delta lt-flat">0.00%</span></div>
+            <div class="live-ticker-row"><span class="lt-id">#2</span><span class="lt-name">DSperse</span><span class="lt-tao">10,369 τ</span><span class="lt-delta lt-down">−2.18%</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="live-equity">
+        <div class="live-equity-head">
+          <span>Equity-Curve · realisiertes P&amp;L</span>
+          <span class="live-equity-value">+12.45 τ</span>
+        </div>
+        <svg viewBox="0 0 600 140" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="eq-grad-de" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#7c5cff"/>
+              <stop offset="100%" stop-color="#3fb950"/>
+            </linearGradient>
+            <linearGradient id="eq-fill-grad-de" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#3fb950" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#3fb950" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path class="eq-fill" d="M 0 110 L 60 100 L 120 96 L 180 84 L 240 88 L 300 70 L 360 62 L 420 50 L 480 40 L 540 28 L 600 18 L 600 140 L 0 140 Z" style="fill: url(#eq-fill-grad-de);"/>
+          <path class="eq-path" d="M 0 110 L 60 100 L 120 96 L 180 84 L 240 88 L 300 70 L 360 62 L 420 50 L 480 40 L 540 28 L 600 18" style="stroke: url(#eq-grad-de);"/>
+        </svg>
+        <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:var(--muted);">
+          <span>Tag 0</span><span>Tag 14</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="dashboard" class="section">
+  <div class="section-inner">
+    <div class="section-head reveal">
+      <span class="kicker">Dashboard</span>
+      <h2>Es gibt eine GUI.<br><span class="grad-2">So sieht sie aus.</span></h2>
+      <p class="subhead">Streamlit-basiert, Dark-Theme, premium-poliert. Unten ist eine getreue HTML-Reproduktion vom echten <code>tao-swarm dashboard</code> Trading-Panel — gleiches Layout, gleiche Farben, gleiche Typography. Echte Screenshots vom ersten Operator-Run folgen hier.</p>
+    </div>
+
+    <div class="dash-mockup reveal">
+      <div class="dm-bar" style="grid-column: 1 / -1;">
+        <span class="dm-bar-dot r"></span>
+        <span class="dm-bar-dot y"></span>
+        <span class="dm-bar-dot g"></span>
+        <span class="dm-bar-url">localhost:8501 — TAO Swarm Dashboard</span>
+      </div>
+
+      <aside class="dm-sidebar">
+        <div>
+          <div class="dm-side-title">🧭 Navigation</div>
+          <div class="dm-nav">
+            <div class="dm-nav-item">System Status</div>
+            <div class="dm-nav-item">Subnet Scores</div>
+            <div class="dm-nav-item">Wallet Watch</div>
+            <div class="dm-nav-item">Market Watch</div>
+            <div class="dm-nav-item">Risk Alerts</div>
+            <div class="dm-nav-item active">▸ Trading</div>
+            <div class="dm-nav-item">Run Logs</div>
+          </div>
+        </div>
+        <div>
+          <div class="dm-side-title">🎛️ Runner</div>
+          <span class="dm-pill dm-pill-success">✓ RUNNING</span>
+          <div style="font-size:0.74rem; color:#9ba6b8; margin-top:6px;">
+            strategy=ensemble · ticks=148 · executed=23
+          </div>
+        </div>
+        <div>
+          <div class="dm-side-title">💬 Befehle</div>
+          <div class="dm-cmd-group">
+            <div class="dm-cmd-group-title">🚀 Erste Schritte</div>
+          </div>
+          <div class="dm-cmd-group">
+            <div class="dm-cmd-group-title">📝 Paper-Trading</div>
+          </div>
+          <div class="dm-cmd-group">
+            <div class="dm-cmd-group-title">⚠️ Live-Trading</div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="dm-main">
+        <h2>Trading</h2>
+        <p class="dm-caption">Live + Paper-Trading-Status. Paper ist Default; Live-Execution braucht Env, Keystore und Per-Strategy-Opt-In.</p>
+
+        <div style="margin: 4px 0 14px 0;">
+          <span class="dm-pill dm-pill-success">✓ RUNNING</span>
+          <span style="color:#9ba6b8; font-size:0.84rem; margin-left:10px;">strategy <b>ensemble</b> · mode <b>PAPER</b></span>
+        </div>
+
+        <div class="dm-hero">
+          <div class="dm-hero-cell"><div class="dm-hero-label">Ticks</div><div class="dm-hero-value">148</div></div>
+          <div class="dm-hero-cell"><div class="dm-hero-label">Executed</div><div class="dm-hero-value">23</div></div>
+          <div class="dm-hero-cell"><div class="dm-hero-label">Refused</div><div class="dm-hero-value">3</div></div>
+          <div class="dm-hero-cell"><div class="dm-hero-label">Errors</div><div class="dm-hero-value">0</div></div>
+          <div class="dm-hero-cell"><div class="dm-hero-label">Last tick</div><div class="dm-hero-value" style="font-size:0.95rem;">14:32:08</div></div>
+        </div>
+
+        <div class="dm-row">
+          <div class="dm-card">
+            <div class="dm-card-title">Per-Strategy Performance · 14d</div>
+            <table class="dm-table">
+              <thead>
+                <tr><th>strategy</th><th class="num">P&amp;L</th><th class="num">win-rate</th><th class="num">weight</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>momentum_rotation</td><td class="num dm-pos">+12.45</td><td class="num">61.5%</td><td class="num">62.4%</td></tr>
+                <tr><td>mean_reversion</td><td class="num dm-neg">−2.10</td><td class="num">38.4%</td><td class="num">25.6%</td></tr>
+                <tr><td>custom_test</td><td class="num">+0.50</td><td class="num">—</td><td class="num">12.0%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="dm-card">
+            <div class="dm-card-title">Vorgeschlagene Ensemble-Gewichte</div>
+            <div class="dm-bar-stack">
+              <div class="dm-bar-row"><div class="dm-bar-track"><div class="dm-bar-fill" style="width:62.4%;"></div></div><span class="dm-bar-pct">62.4%</span></div>
+              <div style="font-size:0.78rem; color:#9ba6b8; margin-top:-4px;">momentum_rotation</div>
+              <div class="dm-bar-row"><div class="dm-bar-track"><div class="dm-bar-fill" style="width:25.6%;"></div></div><span class="dm-bar-pct">25.6%</span></div>
+              <div style="font-size:0.78rem; color:#9ba6b8; margin-top:-4px;">mean_reversion</div>
+              <div class="dm-bar-row"><div class="dm-bar-track"><div class="dm-bar-fill" style="width:12.0%;"></div></div><span class="dm-bar-pct">12.0%</span></div>
+              <div style="font-size:0.78rem; color:#9ba6b8; margin-top:-4px;">custom_test</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dm-chart-wrap">
+          <div style="font-size:0.78rem; color:#9ba6b8; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">Equity Curves nach Strategy</div>
+          <svg viewBox="0 0 600 140" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M 0 100 L 60 95 L 120 92 L 180 80 L 240 78 L 300 65 L 360 55 L 420 45 L 480 35 L 540 25 L 600 18"
+                  fill="none" stroke="#7c5cff" stroke-width="2"/>
+            <path d="M 0 100 L 60 102 L 120 105 L 180 110 L 240 115 L 300 118 L 360 116 L 420 120 L 480 118 L 540 122 L 600 120"
+                  fill="none" stroke="#f85149" stroke-width="2"/>
+            <path d="M 0 100 L 60 99 L 120 100 L 180 96 L 240 95 L 300 92 L 360 90 L 420 88 L 480 86 L 540 85 L 600 83"
+                  fill="none" stroke="#9ba6b8" stroke-width="2" stroke-dasharray="4 3"/>
+          </svg>
+          <div style="display:flex; gap:14px; font-size:0.74rem; color:#9ba6b8; margin-top:6px;">
+            <span><span style="display:inline-block;width:10px;height:2px;background:#7c5cff;vertical-align:middle;"></span> momentum_rotation</span>
+            <span><span style="display:inline-block;width:10px;height:2px;background:#f85149;vertical-align:middle;"></span> mean_reversion</span>
+            <span><span style="display:inline-block;width:10px;height:2px;background:#9ba6b8;vertical-align:middle;border-top:1px dashed #9ba6b8;"></span> custom_test</span>
+          </div>
+        </div>
+
+        <div class="dm-banner" style="margin-top: 14px;">
+          <span class="dm-pill dm-pill-success">✓ HEALTHY</span>
+          <span style="color:#c9d1d9;">Kill-Switch-Pfad: <code>data/.kill</code> (nicht aktiv).</span>
+        </div>
+      </main>
+    </div>
+
+    <p class="subhead reveal" style="margin-top: 22px;">
+      Bilder vom realen Streamlit folgen sobald der Operator die Demo-Aufzeichnungen ergänzt. Bis dahin: <code>tao-swarm dashboard</code> startet die echte Version lokal.
+    </p>
+  </div>
+</section>
+
 <section id="beweis" class="section">
   <div class="section-inner">
     <div class="section-head reveal">
