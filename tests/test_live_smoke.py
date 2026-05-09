@@ -275,6 +275,42 @@ def test_live_subnet_discovery_agent_returns_real_subnets(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Protocol research agent grounds knowledge in live chain stats
+# ---------------------------------------------------------------------------
+
+def test_live_protocol_research_agent_uses_chain(tmp_path):
+    """The protocol_research_agent should ground its hand-curated
+    knowledge in current chain state — when ``use_mock_data=False``
+    the result must include a ``live_stats`` block sourced from a
+    real chain read, with subnet_count > 50 and at least one
+    most-staked subnet listing real TAO_in numbers."""
+    pytest.importorskip("bittensor", reason="bittensor SDK not installed")
+    from tao_swarm.agents.protocol_research_agent import ProtocolResearchAgent
+
+    agent = ProtocolResearchAgent({
+        "use_mock_data": False, "network": "finney",
+        "chain_db_path": str(tmp_path / "proto_chain.db"),
+    })
+    try:
+        out = agent.run({"type": "protocol_research",
+                         "params": {"topic": "overview"}})
+    except (ConnectionError, OSError, RuntimeError) as exc:
+        pytest.skip(f"finney endpoint unreachable: {exc!r}")
+
+    assert out.get("status") == "complete"
+    live = out.get("live_stats", {})
+    if live.get("source") != "chain":
+        pytest.skip(f"live stats fell back to {live.get('source')!r}")
+    assert live.get("subnet_count", 0) > 50
+    most_staked = live.get("most_staked_subnets", [])
+    assert most_staked, "expected at least one most-staked subnet"
+    assert any(
+        isinstance(s.get("tao_in"), (int, float)) and s["tao_in"] > 0
+        for s in most_staked
+    )
+
+
+# ---------------------------------------------------------------------------
 # Full multi-agent workflow against live data
 # ---------------------------------------------------------------------------
 
