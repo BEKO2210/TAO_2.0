@@ -5,9 +5,11 @@ Exports the core orchestration components:
 - ApprovalGate: Safety classification gate
 - TaskRouter: Task-to-agent routing
 - SwarmOrchestrator: Central coordination hub
+- AgentContext: Pull-based shared context bus across agents
 """
 
 from src.orchestrator.approval_gate import ApprovalGate, Classification
+from src.orchestrator.context import AgentContext
 from src.orchestrator.task_router import TaskRouter
 from src.orchestrator.orchestrator import SwarmOrchestrator
 
@@ -16,4 +18,5 @@ __all__ = [
     "Classification",
     "TaskRouter",
     "SwarmOrchestrator",
+    "AgentContext",
 ]
