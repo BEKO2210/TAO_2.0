@@ -192,7 +192,11 @@ def status(ctx):
     click.echo(f"\nPython: {sys.version.split()[0]}")
     click.echo(f"Platform: {sys.platform}")
 
-    # Module status
+    # Module status (importable check, not filesystem-path check —
+    # ``Path("src.collectors")`` looks for a literal dotted directory
+    # name and always reports "not found" even when the package is
+    # importable, which the previous implementation did).
+    import importlib.util as _ilu
     modules = [
         ("Collectors", "src.collectors"),
         ("Scoring", "src.scoring"),
@@ -200,9 +204,10 @@ def status(ctx):
     ]
     click.echo("\nModules:")
     for name, mod_path in modules:
-        mod_dir = Path(mod_path)
-        status_text = "found" if mod_dir.exists() else "not found"
-        color = "green" if mod_dir.exists() else "red"
+        spec = _ilu.find_spec(mod_path)
+        ok = spec is not None
+        status_text = "found" if ok else "not found"
+        color = "green" if ok else "red"
         click.echo(f"  {name:15s} {mod_path:20s} ", nl=False)
         click.echo(click.style(status_text, fg=color))
 
@@ -292,16 +297,47 @@ def subnets(ctx, limit, json_output):
             f"  fallback: {collector._mock_fallback_reason}", fg="yellow",
         ))
     click.echo()
-    click.echo(f"  {'ID':>4s}  {'Name':20s} {'Neurons':>8s} {'Emission':>10s} {'Block':>10s}")
-    click.echo(f"  {'-'*4:>4s}  {'-'*20:20s} {'-'*8:>8s} {'-'*10:>10s} {'-'*10:>10s}")
+    # Detect chain-rich payload (post-#28 shape) vs legacy mock shape.
+    # Rich entries carry ``tao_in`` / ``symbol`` / nested ``identity``;
+    # legacy mock entries have ``num_neurons`` / ``block`` instead.
+    sample = subnet_list[0] if subnet_list else {}
+    has_rich = "tao_in" in sample or "symbol" in sample
 
-    for s in subnet_list[:limit]:
+    if has_rich:
         click.echo(
-            f"  {s['netuid']:>4d}  {s['name']:20s} "
-            f"{s.get('num_neurons', 0):>8d} "
-            f"{s.get('emission', 0):>10.2f} "
-            f"{s.get('block', 0):>10d}"
+            f"  {'ID':>4s}  {'Name':20s} {'Sym':>3s} "
+            f"{'TAO_in':>10s} {'Volume':>12s}  Description"
         )
+        click.echo(
+            f"  {'-'*4:>4s}  {'-'*20:20s} {'-'*3:>3s} "
+            f"{'-'*10:>10s} {'-'*12:>12s}  {'-'*30}"
+        )
+        for s in subnet_list[:limit]:
+            ident = s.get("identity") or {}
+            desc = (ident.get("description") or "")[:40]
+            tao_in = float(s.get("tao_in") or 0.0)
+            volume = float(s.get("subnet_volume") or 0.0)
+            symbol = (s.get("symbol") or "?")[:3]
+            click.echo(
+                f"  {int(s['netuid']):>4d}  {str(s['name'])[:20]:20s} {symbol:>3s} "
+                f"{tao_in:>10,.0f} {volume:>12,.0f}  {desc}"
+            )
+    else:
+        click.echo(
+            f"  {'ID':>4s}  {'Name':20s} "
+            f"{'Neurons':>8s} {'Emission':>10s} {'Block':>10s}"
+        )
+        click.echo(
+            f"  {'-'*4:>4s}  {'-'*20:20s} "
+            f"{'-'*8:>8s} {'-'*10:>10s} {'-'*10:>10s}"
+        )
+        for s in subnet_list[:limit]:
+            click.echo(
+                f"  {s['netuid']:>4d}  {s['name']:20s} "
+                f"{s.get('num_neurons', 0):>8d} "
+                f"{s.get('emission', 0):>10.2f} "
+                f"{s.get('block', 0):>10d}"
+            )
 
     click.echo(f"\n  Total: {len(subnet_list)} subnets")
     click.echo()
