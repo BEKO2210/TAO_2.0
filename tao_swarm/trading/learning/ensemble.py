@@ -299,6 +299,20 @@ class EnsembleStrategy(Strategy):
     @staticmethod
     def _tag_reasoning(prop: TradeProposal, base_name: str, weight: float) -> TradeProposal:
         """Annotate the proposal so the audit trail shows which
-        base produced it and at what ensemble weight."""
+        base produced it and at what ensemble weight.
+
+        Also stamps ``_base_strategy`` into the proposal's target dict
+        so the executor can use the base name (instead of "ensemble")
+        as the ledger's ``strategy`` column. Per-strategy panels then
+        show real per-base performance, which is what the operator
+        actually wants when running an ensemble.
+        """
         prefix = f"[ensemble:{base_name} w={weight:.3f}] "
-        return replace(prop, reasoning=prefix + prop.reasoning)
+        new_target = dict(prop.target)
+        new_target["_base_strategy"] = base_name
+        new_target["_ensemble_weight"] = round(float(weight), 4)
+        return replace(
+            prop,
+            reasoning=prefix + prop.reasoning,
+            target=new_target,
+        )
