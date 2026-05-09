@@ -5,6 +5,7 @@ Provides read-only access to Bittensor chain data via SQLite cache.
 All operations are non-destructive; no writes to the actual chain.
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -15,6 +16,25 @@ from typing import Any, Optional
 from src.collectors._base import BaseCollector
 
 logger = logging.getLogger(__name__)
+
+
+# Fallback finney endpoints — used by SubtensorApi (v10+) when the
+# primary websocket connection drops. Order matters: first one that
+# answers wins. Public endpoints, no auth required.
+_DEFAULT_FALLBACK_ENDPOINTS: tuple[str, ...] = (
+    "wss://entrypoint-finney.opentensor.ai:443",
+    "wss://lite.sub.latent.to:443",
+)
+
+# Write-side SDK methods this collector must NEVER call. Enforced by
+# tests/test_chain_readonly_collector.py::test_no_write_methods_called.
+# Keep in sync with bittensor SDK v10 surface.
+_WRITE_METHODS_DENYLIST: frozenset[str] = frozenset({
+    "add_stake", "unstake", "transfer", "set_weights",
+    "commit_weights", "reveal_weights", "add_proxy", "remove_proxy",
+    "move_stake", "register", "burned_register", "serve_axon",
+    "do_transfer", "do_set_weights", "do_stake",
+})
 
 
 def _try_import_bittensor() -> Any:
@@ -189,6 +209,12 @@ class ChainReadOnlyCollector(BaseCollector):
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
         self._subtensor: Any = None  # lazily-loaded bittensor.subtensor
+        # Allow callers to override the fallback endpoint list (e.g. for
+        # private subtensor nodes or test networks). Default covers
+        # the two stable public finney endpoints.
+        self._fallback_endpoints: tuple[str, ...] = tuple(
+            config.get("fallback_endpoints", _DEFAULT_FALLBACK_ENDPOINTS),
+        )
         logger.info(
             "ChainReadOnlyCollector initialized (network=%s, use_mock_data=%s, db=%s)",
             self.network, self.use_mock_data, os.path.basename(self.db_path),
@@ -315,36 +341,208 @@ class ChainReadOnlyCollector(BaseCollector):
         """
         Pull subnet identifiers from the live chain via bittensor SDK.
 
-        Uses *only* read methods on ``bt.subtensor``; this collector
-        never instantiates a wallet or signs anything. If a network
-        error occurs, propagate the exception — the caller (CLI / agent)
-        is expected to catch it and fall back gracefully rather than
-        silently masking real chain issues as fake data.
+        Uses *only* read methods on the subtensor; this collector
+        never instantiates a wallet or signs anything (enforced by
+        ``_WRITE_METHODS_DENYLIST`` + the corresponding test). If a
+        network error occurs, propagate the exception — the caller
+        (CLI / agent) is expected to catch it and fall back gracefully
+        rather than silently masking real chain issues as fake data.
         """
-        sub = self._get_subtensor(bt)
-        # Different SDK versions expose this differently; try the most
-        # stable read first and fall through to a simpler one.
-        netuids: list[int]
-        if hasattr(sub, "get_subnets"):
-            netuids = list(sub.get_subnets())
-        elif hasattr(sub, "get_all_subnet_netuids"):
-            netuids = list(sub.get_all_subnet_netuids())
-        else:
-            raise RuntimeError(
-                "bittensor.subtensor exposes neither get_subnets() nor "
-                "get_all_subnet_netuids() — incompatible SDK version"
-            )
+        with self._with_subtensor(bt) as sub:
+            netuids = self._call_subnets(sub)
         return [{"netuid": int(n), "name": f"subnet_{int(n)}"} for n in netuids]
 
+    def _live_metagraph(self, bt: Any, netuid: int, lite: bool = True) -> dict:
+        """
+        Pull a real metagraph from the chain via the SDK.
+
+        ``lite=True`` (default) skips the V×N weight and bond matrices
+        — those are multi-MB on busy subnets and would dominate the
+        dashboard hot path. Pass ``lite=False`` only from paths that
+        explicitly need ``W`` / ``B`` (the weight-copy detector planned
+        for PR B; subnet quality scoring in PR C).
+        """
+        with self._with_subtensor(bt) as sub:
+            mg = self._call_metagraph(sub, netuid=netuid, lite=lite)
+
+        # Translate the SDK's tensor-shaped attributes to plain Python
+        # so SQLite caching + JSON serialisation work without dragging
+        # numpy/torch into our hot path. Each attr may be tensor or
+        # list depending on SDK version — _to_list handles both.
+        neurons_lite = []
+        uids = self._to_list(getattr(mg, "uids", []))
+        stake = self._to_list(getattr(mg, "S", []))
+        emission = self._to_list(getattr(mg, "E", []))
+        trust = self._to_list(getattr(mg, "T", []))
+        ranks = self._to_list(getattr(mg, "R", []))
+        consensus = self._to_list(getattr(mg, "C", []))
+        incentive = self._to_list(getattr(mg, "I", []))
+        validator_permit = self._to_list(getattr(mg, "validator_permit", []))
+        last_update = self._to_list(getattr(mg, "last_update", []))
+        active = self._to_list(getattr(mg, "active", []))
+
+        for i, uid in enumerate(uids):
+            neurons_lite.append({
+                "uid": int(uid),
+                "stake": float(stake[i]) if i < len(stake) else 0.0,
+                "emission": float(emission[i]) if i < len(emission) else 0.0,
+                "trust": float(trust[i]) if i < len(trust) else 0.0,
+                "rank": float(ranks[i]) if i < len(ranks) else 0.0,
+                "consensus": float(consensus[i]) if i < len(consensus) else 0.0,
+                "incentive": float(incentive[i]) if i < len(incentive) else 0.0,
+                "validator_permit": bool(validator_permit[i]) if i < len(validator_permit) else False,
+                "last_update_block": int(last_update[i]) if i < len(last_update) else 0,
+                "active": bool(active[i]) if i < len(active) else True,
+            })
+
+        # Roll up validators vs miners for the dashboard summary.
+        validators = [n for n in neurons_lite if n["validator_permit"]]
+        miners = [n for n in neurons_lite if not n["validator_permit"]]
+        total_stake = sum(n["stake"] for n in neurons_lite)
+        total_emission = sum(n["emission"] for n in neurons_lite)
+
+        return {
+            "netuid": netuid,
+            "block": int(getattr(mg, "block", 0)),
+            "num_neurons": len(neurons_lite),
+            "neurons_sampled": len(neurons_lite),
+            "neurons": neurons_lite,
+            "validator_count": len(validators),
+            "miner_count": len(miners),
+            "aggregate": {
+                "total_stake": round(total_stake, 4),
+                "total_emission": round(total_emission, 8),
+                "avg_stake": round(total_stake / max(len(neurons_lite), 1), 4),
+                "avg_emission": round(total_emission / max(len(neurons_lite), 1), 8),
+            },
+            "_meta": self._meta(mode="live", network=self.network, lite=lite),
+            "timestamp": int(time.time()),
+        }
+
+    @staticmethod
+    def _call_metagraph(sub: Any, netuid: int, lite: bool) -> Any:
+        """SDK shim — v10 uses ``metagraph(netuid, lite=...)``; legacy
+        SDKs used ``get_metagraph(netuid)`` without the lite kwarg."""
+        for name in ("metagraph", "get_metagraph"):
+            method = getattr(sub, name, None)
+            if callable(method):
+                try:
+                    return method(netuid=netuid, lite=lite)
+                except TypeError:
+                    return method(netuid=netuid)
+        raise RuntimeError(
+            "bittensor subtensor exposes neither metagraph() nor "
+            "get_metagraph() — incompatible SDK version"
+        )
+
+    @staticmethod
+    def _to_list(maybe_tensor: Any) -> list:
+        """Convert a torch/numpy tensor (or already-a-list) to a Python
+        list. Avoids importing torch / numpy at the top of this module."""
+        tolist = getattr(maybe_tensor, "tolist", None)
+        if callable(tolist):
+            try:
+                return list(tolist())
+            except Exception:
+                pass
+        try:
+            return list(maybe_tensor)
+        except TypeError:
+            return []
+
+    @staticmethod
+    def _call_subnets(sub: Any) -> list[int]:
+        """
+        Try v10's ``get_all_subnets_netuid`` first, then fall through to
+        legacy method names. Raises if no compatible reader is present
+        — never silently returns an empty list (that would look like a
+        successful read of zero subnets, which is meaningfully wrong).
+        """
+        for name in ("get_all_subnets_netuid", "get_subnets",
+                     "get_all_subnet_netuids"):
+            method = getattr(sub, name, None)
+            if callable(method):
+                return list(method())
+        raise RuntimeError(
+            "bittensor subtensor exposes none of "
+            "get_all_subnets_netuid / get_subnets / get_all_subnet_netuids "
+            "— incompatible SDK version"
+        )
+
     def _get_subtensor(self, bt: Any) -> Any:
-        """Return a cached, read-only subtensor for the configured network."""
+        """
+        Return a (cached) read-only subtensor for the configured network.
+
+        Kept for backward compatibility with the original sync helper
+        signature. New code should prefer ``_with_subtensor`` so the
+        WSS connection lifetime is bounded.
+        """
         if self._subtensor is None:
-            self._subtensor = bt.subtensor(network=self.network)
+            self._subtensor = self._build_subtensor(bt)
         return self._subtensor
+
+    def _build_subtensor(self, bt: Any) -> Any:
+        """
+        Construct the right read-only subtensor for the installed SDK.
+
+        Bittensor SDK v10+ exposes ``SubtensorApi`` — a unified wrapper
+        with built-in fallback endpoints, retry, and the v9→v10 method
+        rename. Older SDKs (and our test stubs) only have
+        ``bt.subtensor``. We try the modern path first and fall through
+        gracefully so this collector keeps working across the supported
+        SDK range (8.x through 10.x).
+        """
+        if hasattr(bt, "SubtensorApi"):
+            try:
+                return bt.SubtensorApi(
+                    network=self.network,
+                    fallback_endpoints=list(self._fallback_endpoints),
+                    retry_forever=False,
+                    log_verbose=False,
+                )
+            except TypeError:
+                # Older v10 betas had a different kwarg surface; fall
+                # back to the no-arg path so we still get the wrapper's
+                # benefits even if fallback_endpoints isn't supported.
+                return bt.SubtensorApi(network=self.network)
+        # Legacy <v10
+        return bt.subtensor(network=self.network)
+
+    @contextlib.contextmanager
+    def _with_subtensor(self, bt: Any) -> Any:
+        """
+        Yield a fresh subtensor and close it on exit.
+
+        Use this for any new live read path. Long-held WSS connections
+        get reaped by the finney node after ~10s of idle, so the
+        previous "cache the subtensor for the lifetime of the
+        collector" pattern produced silent stale-socket failures.
+        Per-batch open-then-close keeps us a good citizen on shared
+        public endpoints and gives reconnect-on-drop semantics for
+        free.
+        """
+        sub = self._build_subtensor(bt)
+        try:
+            yield sub
+        finally:
+            close = getattr(sub, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception as exc:  # pragma: no cover - close best-effort
+                    logger.debug("subtensor close failed: %s", exc)
 
     def get_subnet_info(self, netuid: int) -> dict:
         """
         Return detailed information for a specific subnet.
+
+        In live mode, enriches with real on-chain economic parameters
+        from the SDK: ``recycle`` (TAO required to register a miner),
+        ``subnet_burn_cost`` (TAO required to create a new subnet),
+        and the full ``hyperparameters`` block (tempo, immunity, kappa,
+        rho, weight thresholds, …). In mock mode, retains the original
+        synthetic values so existing tests and offline runs keep
+        working unchanged.
 
         Args:
             netuid: The unique subnet identifier.
@@ -360,16 +558,78 @@ class ChainReadOnlyCollector(BaseCollector):
         for s in subnets:
             if s["netuid"] == netuid:
                 result = dict(s)
-                # Enrich with mock additional fields
-                result["recycle_register"] = 0.1 * netuid
-                result["burn_cost"] = 0.05 * netuid
-                result["subnet_version"] = 1
-                result["created_at_block"] = s["block"] - 10000
+                bt = _try_import_bittensor()
+                if not self.use_mock_data and bt is not None:
+                    self._enrich_subnet_info_live(result, bt, netuid)
+                else:
+                    # Synthetic fallback — flagged so downstream
+                    # consumers can tell mock from live.
+                    result["recycle_register"] = 0.1 * netuid
+                    result["burn_cost"] = 0.05 * netuid
+                    result["subnet_version"] = 1
+                    result["created_at_block"] = s.get("block", 0) - 10000
+                    result["_meta"] = self._meta(mode="mock")
                 self._cache_set("subnet_cache", "netuid", netuid, result)
                 return result
 
         logger.warning("Subnet netuid=%d not found", netuid)
         return {"error": f"Subnet {netuid} not found", "netuid": netuid}
+
+    def _enrich_subnet_info_live(self, result: dict, bt: Any, netuid: int) -> None:
+        """
+        Pull the real economic parameters from the SDK and stamp them
+        onto ``result``. Each call is wrapped individually so a
+        failure in one (e.g. ``recycle`` not yet supported on the
+        installed SDK) doesn't kill the others.
+        """
+        with self._with_subtensor(bt) as sub:
+            result["recycle_register"] = self._safe_float(
+                self._try_call(sub, "recycle", netuid=netuid)
+            )
+            result["burn_cost"] = self._safe_float(
+                self._try_call(sub, "get_subnet_burn_cost")
+            )
+            hyperparams = self._try_call(sub, "get_subnet_hyperparameters", netuid=netuid)
+            if hyperparams is not None:
+                # SDK returns a NamedTuple-style object — convert to dict.
+                asdict = getattr(hyperparams, "_asdict", None)
+                if callable(asdict):
+                    result["hyperparameters"] = dict(asdict())
+                elif hasattr(hyperparams, "__dict__"):
+                    result["hyperparameters"] = dict(hyperparams.__dict__)
+                else:
+                    result["hyperparameters"] = {"raw": str(hyperparams)}
+        result["_meta"] = self._meta(mode="live", network=self.network)
+
+    @staticmethod
+    def _try_call(sub: Any, method_name: str, **kwargs: Any) -> Any:
+        """Best-effort call to an SDK method — returns ``None`` on
+        AttributeError / Exception so the caller can degrade gracefully."""
+        method = getattr(sub, method_name, None)
+        if not callable(method):
+            return None
+        try:
+            return method(**kwargs)
+        except Exception as exc:  # pragma: no cover - SDK-side errors are noisy
+            logger.debug("SDK %s(%s) failed: %s", method_name, kwargs, exc)
+            return None
+
+    @staticmethod
+    def _safe_float(value: Any) -> float:
+        """Convert SDK Balance / int / None to a plain float."""
+        if value is None:
+            return 0.0
+        # bittensor Balance objects expose .tao (float)
+        tao_attr = getattr(value, "tao", None)
+        if tao_attr is not None:
+            try:
+                return float(tao_attr)
+            except (TypeError, ValueError):
+                pass
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
     # ── Miner API ─────────────────────────────────────────────────────────
 
@@ -515,6 +775,23 @@ class ChainReadOnlyCollector(BaseCollector):
         cached = self._cache_get("metagraph_cache", "netuid", netuid)
         if cached:
             return cached
+
+        # Live path: pull a real lite metagraph from the chain when
+        # use_mock_data is False and the SDK is installed. lite=True
+        # skips the multi-MB W (weight) and B (bond) matrices — the
+        # weight-copy detector pulls those separately via
+        # ``get_metagraph_full`` so the dashboard hot path stays cheap.
+        bt = _try_import_bittensor()
+        if not self.use_mock_data and bt is not None:
+            try:
+                live_mg = self._live_metagraph(bt, netuid, lite=True)
+                self._cache_set("metagraph_cache", "netuid", netuid, live_mg)
+                return live_mg
+            except Exception as exc:
+                logger.warning(
+                    "Live metagraph failed for netuid=%d: %s — falling back "
+                    "to mock", netuid, exc,
+                )
 
         subnet = self.get_subnet_info(netuid)
         if "error" in subnet:
