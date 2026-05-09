@@ -67,6 +67,72 @@ _KNOWN_PHISHING_PATTERNS: list[str] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Bittensor-specific detectors (added per online research, May 2026)
+# ---------------------------------------------------------------------------
+
+# Known-malicious bittensor-related PyPI packages from real incidents:
+#   - May 2024: ``bittensor==6.12.2`` was a poisoned upstream release
+#     that drained ~$8M / 32k TAO via patched stake_extrinsic.
+#   - August 2025: GitLab found a typosquat campaign shipping
+#     ``bitensor 9.9.4/9.9.5``, ``bittenso-cli 9.9.4``, and
+#     ``qbittensor 9.9.4`` — same pattern, redirected funds.
+# Format: (canonical_name, [malicious_versions]) where the empty
+# version list means "any version of this name is malicious".
+_BITTENSOR_PACKAGE_DENYLIST: dict[str, frozenset[str]] = {
+    # Real poisoned release of the legitimate package
+    "bittensor": frozenset({"6.12.2"}),
+    # Pure typosquats — every version is malicious
+    "bitensor": frozenset(),
+    "bittenso": frozenset(),
+    "bittenso-cli": frozenset(),
+    "qbittensor": frozenset(),
+    # Variants seen in the same Aug 2025 campaign
+    "bittensor_cli": frozenset(),     # underscore typosquat of bittensor-cli
+    "bittensoor": frozenset(),
+    "bittensr": frozenset(),
+}
+
+# Coldkey-swap social-engineering markers. The 5-day arbitrated
+# coldkey swap is irreversible and is being weaponised by attackers
+# who pose as "support" telling the user "your key is compromised,
+# schedule a swap to this safe address". Any text containing these
+# tokens combined with a destination SS58 should escalate to DANGER.
+_COLDKEY_SWAP_MARKERS: list[str] = [
+    "schedule_coldkey_swap",
+    "schedulecoldkeyswap",          # camelCase extrinsic name
+    "btcli wallet schedule_coldkey_swap",
+    "btcli w schedule_coldkey_swap",
+    "swap-hotkey",
+    "swap_hotkey",
+]
+
+# Urgency phrasing that pairs with coldkey-swap social-engineering.
+# Real OTF / Latent communications never use this register.
+_COLDKEY_SWAP_URGENCY: list[str] = [
+    "execute within",
+    "arbitration block",
+    "your key is compromised",
+    "your wallet is compromised",
+    "act before",
+    "must initiate immediately",
+]
+
+# SS58 (substrate) address heuristic: starts with '5', 47 chars after.
+# Bittensor uses prefix 42 → addresses always start with '5'.
+_SS58_PATTERN = re.compile(r"\b5[A-HJ-NP-Za-km-z1-9]{47}\b")
+
+# Validators with hotkey age below this many blocks have no slashing
+# track record. 4-month subnet immunity ≈ 4*30*24*1200 = 3,456,000
+# blocks at 12s/block. Use a conservative cutoff for delegation risk.
+_FRESH_HOTKEY_BLOCKS = 200_000  # ~28 days
+
+# Take rate (validator commission) above this is a delegator trap —
+# bait with low take, then raise. Bittensor caps take at 18% by
+# default but subnet owners can take more.
+_HIGH_TAKE_PCT = 18.0
+
+
 class RiskSecurityAgent:
     """
     Risk and security review agent with VETO power.
@@ -132,6 +198,16 @@ class RiskSecurityAgent:
                 result = self._review_repository(params)
             elif target == "url":
                 result = self._review_url(params)
+            elif target == "validator":
+                # Bittensor-specific delegation safety review.
+                # Expected params: {"validator": {...}, "current_block": int}
+                v = params.get("validator") or {}
+                cb = int(params.get("current_block", 0))
+                result = self.score_validator_risk(v, current_block=cb)
+                # Wrap in the standard verdict shape used by other paths
+                result.setdefault("findings_count", len(result.get("findings", [])))
+                result.setdefault("target", "validator")
+                result.setdefault("reviewed_at", time.time())
             elif target == "general":
                 result = self._general_review(params)
             else:
@@ -429,6 +505,20 @@ class RiskSecurityAgent:
         findings.extend(cred_findings)
         risk_score += cred_score
 
+        # Bittensor-specific: PyPI typosquats in any embedded
+        # ``pip install`` / requirements line in the content.
+        pypi_findings, pypi_score = self.scan_bittensor_dependency(content)
+        findings.extend(pypi_findings)
+        risk_score += pypi_score
+
+        # Bittensor-specific: coldkey-swap social engineering.
+        watchlist = set(params.get("watchlist_addresses") or [])
+        swap_findings, swap_score = self.scan_coldkey_swap_pattern(
+            content, watchlist_addresses=watchlist,
+        )
+        findings.extend(swap_findings)
+        risk_score += swap_score
+
         # Check wallet safety rules
         wallet_findings, wallet_score = self._check_wallet_safety(content)
         findings.extend(wallet_findings)
@@ -558,6 +648,329 @@ class RiskSecurityAgent:
             # Fallback regex
             match = re.search(r'https?://([^/\s]+)', url)
             return match.group(1).lower() if match else ""
+
+    # ── Bittensor-specific detectors (added per online research) ──────────
+
+    def scan_bittensor_dependency(self, dep_string: str) -> tuple[list[dict], int]:
+        """
+        Scan a single dependency string (line of requirements.txt,
+        ``pip install ...`` command, or import statement) for the
+        known-malicious bittensor packages from the May 2024 and
+        August 2025 supply-chain incidents.
+
+        Detects:
+
+        - Exact poisoned versions on the legitimate ``bittensor``
+          package (e.g. ``bittensor==6.12.2``).
+        - Any version of the known typosquats (``bitensor``,
+          ``bittenso``, ``bittenso-cli``, ``qbittensor``,
+          ``bittensor_cli`` with underscore, …).
+        - Installs from non-PyPI indexes via ``--index-url`` or
+          ``--extra-index-url`` pointing anywhere except pypi.org —
+          a common vector for sideloaded malicious wheels.
+
+        Returns ``(findings, risk_score)`` so callers can fold this
+        into ``_compile_verdict``. CRITICAL findings score 50 each.
+        """
+        findings: list[dict] = []
+        score = 0
+        text = (dep_string or "").lower().strip()
+        if not text:
+            return findings, 0
+
+        # Off-PyPI index → CRITICAL on its own (sideload vector)
+        for marker in ("--index-url", "--extra-index-url"):
+            idx = text.find(marker)
+            if idx == -1:
+                continue
+            after = text[idx + len(marker):].strip(" =").split()[0:1]
+            url = after[0] if after else ""
+            if url and "pypi.org" not in url and "files.pythonhosted.org" not in url:
+                findings.append({
+                    "severity": "CRITICAL",
+                    "category": "supply_chain_off_pypi_index",
+                    "finding": f"pip install via non-PyPI index: {url}",
+                    "recommendation": (
+                        "STOP — only install bittensor from pypi.org. "
+                        "Custom indexes are the vector used by the Aug "
+                        "2025 typosquat campaign."
+                    ),
+                })
+                score += 50
+
+        # Parse out package name + optional version pin. Cover the
+        # common shapes:  bittensor==6.12.2  bittensor>=8  bittensor
+        for match in re.finditer(
+            r"\b([a-zA-Z][a-zA-Z0-9_-]*)\s*(?:==|>=|<=|~=|!=|>|<)?\s*([\d.]*)",
+            text,
+        ):
+            name_raw = match.group(1)
+            version = match.group(2)
+            name = name_raw.lower()
+            if name not in _BITTENSOR_PACKAGE_DENYLIST:
+                continue
+            bad_versions = _BITTENSOR_PACKAGE_DENYLIST[name]
+            # Empty bad_versions = the whole package is a known typosquat
+            if not bad_versions or version in bad_versions:
+                hint = (
+                    f"version {version} on the legitimate name"
+                    if name == "bittensor" and version
+                    else f"typosquat of bittensor / bittensor-cli"
+                )
+                findings.append({
+                    "severity": "CRITICAL",
+                    "category": "supply_chain_malicious_package",
+                    "finding": f"Known-malicious bittensor package: {name_raw}{('==' + version) if version else ''} — {hint}",
+                    "recommendation": (
+                        "STOP — this package version was used in a real "
+                        "Bittensor wallet-draining campaign. Uninstall "
+                        "immediately: `pip uninstall " + name_raw + "`."
+                    ),
+                    "package": name,
+                    "version": version,
+                })
+                score += 50
+
+        return findings, score
+
+    def scan_coldkey_swap_pattern(
+        self,
+        content: str,
+        watchlist_addresses: set[str] | None = None,
+    ) -> tuple[list[dict], int]:
+        """
+        Detect the coldkey-swap social-engineering pattern.
+
+        Real OTF / Latent communications never instruct users to
+        schedule a ``schedule_coldkey_swap`` to a third-party address.
+        Any text containing the swap markers + an SS58 destination
+        that isn't already in the user's watchlist + urgency phrasing
+        scores CRITICAL. The 5-day arbitrated swap is irreversible
+        once executed.
+
+        Args:
+            content: Free-form text to scan (chat message, doc, etc.)
+            watchlist_addresses: Optional set of SS58 addresses the
+                user already trusts. Destinations that match these
+                downgrade the finding from CRITICAL to HIGH.
+
+        Returns ``(findings, risk_score)``.
+        """
+        findings: list[dict] = []
+        score = 0
+        text = (content or "").lower()
+        if not text:
+            return findings, 0
+
+        # Marker present?
+        marker_hit = next(
+            (m for m in _COLDKEY_SWAP_MARKERS if m in text),
+            None,
+        )
+        if not marker_hit:
+            return findings, 0
+
+        # Destination SS58 in the text?
+        # (Operate on the original case-preserving content for SS58 match.)
+        ss58_matches = _SS58_PATTERN.findall(content or "")
+        urgency_hit = any(u in text for u in _COLDKEY_SWAP_URGENCY)
+        watchlist = watchlist_addresses or set()
+
+        # Worst case: marker + new (non-watchlist) destination + urgency.
+        for ss58 in ss58_matches:
+            in_watchlist = ss58 in watchlist
+            severity = "HIGH" if in_watchlist else "CRITICAL"
+            findings.append({
+                "severity": severity,
+                "category": "coldkey_swap_social_engineering",
+                "finding": (
+                    f"Coldkey swap instruction detected ('{marker_hit}') "
+                    f"with destination {ss58[:10]}..."
+                    + (" (in watchlist)" if in_watchlist else " (NOT in watchlist)")
+                    + (" + urgency phrasing" if urgency_hit else "")
+                ),
+                "recommendation": (
+                    "STOP — verify out-of-band before executing any "
+                    "schedule_coldkey_swap. The 5-day arbitrated swap is "
+                    "irreversible and OTF/Latent CANNOT intervene. Real "
+                    "support never asks you to swap your coldkey."
+                ),
+                "destination_ss58": ss58,
+                "in_watchlist": in_watchlist,
+                "urgency_detected": urgency_hit,
+            })
+            score += 50 if severity == "CRITICAL" else 30
+
+        # Marker without any SS58 in the text — still suspicious as
+        # a precursor to a follow-up message with the address.
+        if not ss58_matches:
+            findings.append({
+                "severity": "HIGH" if urgency_hit else "MEDIUM",
+                "category": "coldkey_swap_marker_only",
+                "finding": (
+                    f"Coldkey-swap command reference '{marker_hit}' detected "
+                    "without a destination address — likely precursor to a "
+                    "social-engineering follow-up."
+                ),
+                "recommendation": (
+                    "Treat any subsequent message asking to swap your "
+                    "coldkey as suspicious. Verify the destination "
+                    "address out-of-band."
+                ),
+            })
+            score += 30 if urgency_hit else 15
+
+        return findings, score
+
+    def score_validator_risk(self, validator: dict, current_block: int = 0) -> dict:
+        """
+        Risk-score a validator hotkey for delegation safety.
+
+        Computes a 0..100 risk score and a list of red-flag findings
+        from the validator's on-chain shape. Higher score = more risk.
+        Built around the patterns the online research surfaced:
+
+        - Hotkey age below ``_FRESH_HOTKEY_BLOCKS`` (~28 days) — no
+          slashing track record, can be a fresh impersonator.
+        - No axon endpoint serving — validator publishes nothing.
+        - ``vtrust == 0`` on subnets where the validator holds a
+          permit — they have a permit but aren't trusted.
+        - Recent take rate spike — bait-then-raise delegator trap.
+        - Take rate already above ``_HIGH_TAKE_PCT``.
+        - Coldkey has scheduled a swap — about to rotate out.
+
+        Args:
+            validator: Dict with optional keys: ``hotkey``, ``coldkey``,
+                ``registered_block``, ``take_pct``, ``take_history``
+                (list of ``[block, pct]`` tuples), ``vtrust_per_subnet``
+                (dict of netuid→vtrust), ``axon_serving`` (bool),
+                ``scheduled_coldkey_swap_block`` (int|None),
+                ``identity_name`` (str).
+            current_block: Reference block for age comparisons.
+
+        Returns:
+            ``{"score": int, "findings": list[dict], "verdict": str}``
+        """
+        findings: list[dict] = []
+        score = 0
+
+        # 1. Fresh hotkey — no slashing history
+        registered = validator.get("registered_block", 0)
+        if current_block and registered:
+            age_blocks = current_block - registered
+            if age_blocks < _FRESH_HOTKEY_BLOCKS:
+                findings.append({
+                    "severity": "HIGH",
+                    "category": "fresh_validator_hotkey",
+                    "finding": (
+                        f"Hotkey age {age_blocks} blocks "
+                        f"(< {_FRESH_HOTKEY_BLOCKS} threshold)"
+                    ),
+                    "recommendation": (
+                        "Wait at least one full immunity period before "
+                        "delegating. Fresh hotkeys can be impersonators."
+                    ),
+                })
+                score += 30
+
+        # 2. No axon serving
+        if validator.get("axon_serving") is False:
+            findings.append({
+                "severity": "MEDIUM",
+                "category": "no_axon_serving",
+                "finding": "Validator publishes no axon endpoint",
+                "recommendation": (
+                    "Real validators serve axons. Absent axon = absent "
+                    "real work."
+                ),
+            })
+            score += 15
+
+        # 3. vtrust=0 on permitted subnets
+        vtrust = validator.get("vtrust_per_subnet") or {}
+        zero_vtrust = [n for n, t in vtrust.items() if t == 0]
+        if zero_vtrust:
+            findings.append({
+                "severity": "MEDIUM",
+                "category": "zero_vtrust_with_permit",
+                "finding": (
+                    f"Validator holds permit but vtrust=0 on "
+                    f"subnet(s) {zero_vtrust}"
+                ),
+                "recommendation": (
+                    "Validator is registered but not trusted by other "
+                    "validators on these subnets — likely weight-copying "
+                    "or otherwise misbehaving."
+                ),
+            })
+            score += 20
+
+        # 4. Recent take spike
+        take_history = validator.get("take_history") or []
+        if len(take_history) >= 2:
+            recent_take = take_history[-1][1]
+            prev_take = take_history[-2][1]
+            if recent_take > prev_take + 5.0:
+                findings.append({
+                    "severity": "HIGH",
+                    "category": "validator_take_spike",
+                    "finding": (
+                        f"Take raised from {prev_take:.1f}% to "
+                        f"{recent_take:.1f}% — bait-then-raise pattern"
+                    ),
+                    "recommendation": (
+                        "Validator increased commission sharply — typical "
+                        "delegator trap. Consider undelegating."
+                    ),
+                })
+                score += 30
+
+        # 5. High take rate
+        take_pct = validator.get("take_pct", 0.0)
+        if take_pct > _HIGH_TAKE_PCT:
+            findings.append({
+                "severity": "MEDIUM",
+                "category": "high_take_rate",
+                "finding": f"Take rate {take_pct:.1f}% > {_HIGH_TAKE_PCT}% threshold",
+                "recommendation": "Compare against subnet median take.",
+            })
+            score += 15
+
+        # 6. Scheduled coldkey swap (about to rotate out)
+        if validator.get("scheduled_coldkey_swap_block"):
+            findings.append({
+                "severity": "CRITICAL",
+                "category": "scheduled_coldkey_swap",
+                "finding": (
+                    "Validator coldkey has a scheduled swap pending — "
+                    "delegations may be lost or redirected when it executes"
+                ),
+                "recommendation": (
+                    "Do not delegate to a validator with a pending "
+                    "coldkey swap. Wait for the swap to execute or be "
+                    "cancelled."
+                ),
+            })
+            score += 50
+
+        # Verdict mapping (independent of _compile_verdict because the
+        # caller may want to embed this into a per-validator report
+        # rather than a global review).
+        if score >= 50:
+            verdict = "STOP"
+        elif score >= 30:
+            verdict = "REJECT"
+        elif score >= 15:
+            verdict = "PAUSE"
+        else:
+            verdict = "PROCEED"
+
+        return {
+            "score": score,
+            "verdict": verdict,
+            "findings": findings,
+            "validator_hotkey": validator.get("hotkey"),
+        }
 
     def _compile_verdict(
         self,
