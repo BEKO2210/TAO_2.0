@@ -674,35 +674,133 @@ def risk(ctx, subnet, repo, json_output):
 @click.option("--dry-run", is_flag=True, help="Simulate run without executing")
 @click.pass_context
 def run(ctx, agent, task, dry_run):
-    """Start orchestrator run."""
+    """
+    Execute an orchestrator task end-to-end.
+
+    Without ``--task``, runs ``system_check`` as the default smoke
+    task. With ``--task '{"type": "subnet_discovery", ...}'`` runs
+    the given task through the full orchestrator (ApprovalGate +
+    TaskRouter + agent.run + result wrap). With ``--agent NAME``,
+    only registers the single named agent; otherwise registers all
+    15 built-ins (matches the ``capabilities`` command).
+    """
     click.echo(click.style("\n=== Orchestrator Run ===", fg="blue", bold=True))
+    config = ctx.obj["config"]
+    click.echo(_mode_banner(config))
 
-    if dry_run:
-        click.echo(click.style("\n  [DRY RUN] No actions will be executed", fg="yellow"))
-
-    click.echo("\n  Checking orchestrator...")
-
-    orch_path = Path("src/orchestrator/orchestrator.py")
-    if orch_path.exists():
-        click.echo(click.style("  Orchestrator module found", fg="green"))
-    else:
-        click.echo(click.style("  Orchestrator module not found", fg="yellow"))
-        click.echo("  Run will use built-in task routing.")
-
-    if agent:
-        click.echo(f"\n  Target agent: {agent}")
+    # Parse --task before doing anything expensive so a typo aborts early.
     if task:
         try:
             task_dict = json.loads(task)
-            click.echo(f"  Task: {json.dumps(task_dict, indent=2)}")
-        except json.JSONDecodeError:
-            click.echo(click.style("  Invalid task JSON", fg="red"))
-            return
-
-    if not dry_run:
-        click.echo(click.style("\n  Run completed successfully", fg="green"))
+        except json.JSONDecodeError as exc:
+            click.echo(click.style(
+                f"  Invalid task JSON: {exc}", fg="red",
+            ), err=True)
+            raise click.Abort()
     else:
-        click.echo(click.style("\n  Dry run completed", fg="green"))
+        task_dict = {"type": "system_check"}
+        click.echo(click.style(
+            "  No --task given — running default 'system_check'", fg="yellow",
+        ))
+
+    if dry_run:
+        click.echo(click.style(
+            "\n  [DRY RUN] Task validated; no agent will be invoked.", fg="yellow",
+        ))
+        click.echo(f"  Task: {json.dumps(task_dict, indent=2)}")
+        return
+
+    # Lazy import — keeps the CLI smoke-light when this command isn't called.
+    try:
+        from src.agents import (
+            DashboardDesignAgent,
+            DocumentationAgent,
+            FullstackDevAgent,
+            InfraDevopsAgent,
+            MarketTradeAgent,
+            MinerEngineeringAgent,
+            ProtocolResearchAgent,
+            QATestAgent,
+            RiskSecurityAgent,
+            SubnetDiscoveryAgent,
+            SubnetScoringAgent,
+            SystemCheckAgent,
+            TrainingExperimentAgent,
+            ValidatorEngineeringAgent,
+            WalletWatchAgent,
+        )
+        from src.orchestrator import SwarmOrchestrator, load_plugins
+    except ImportError as exc:
+        click.echo(click.style(
+            f"  Import failed: {exc}", fg="red",
+        ), err=True)
+        raise click.Abort()
+
+    all_classes = {
+        "system_check_agent": SystemCheckAgent,
+        "protocol_research_agent": ProtocolResearchAgent,
+        "subnet_discovery_agent": SubnetDiscoveryAgent,
+        "subnet_scoring_agent": SubnetScoringAgent,
+        "wallet_watch_agent": WalletWatchAgent,
+        "market_trade_agent": MarketTradeAgent,
+        "risk_security_agent": RiskSecurityAgent,
+        "miner_engineering_agent": MinerEngineeringAgent,
+        "validator_engineering_agent": ValidatorEngineeringAgent,
+        "training_experiment_agent": TrainingExperimentAgent,
+        "infra_devops_agent": InfraDevopsAgent,
+        "dashboard_design_agent": DashboardDesignAgent,
+        "fullstack_dev_agent": FullstackDevAgent,
+        "qa_test_agent": QATestAgent,
+        "documentation_agent": DocumentationAgent,
+    }
+
+    orch = SwarmOrchestrator({**config, "wallet_mode": "WATCH_ONLY"})
+    if agent:
+        cls = all_classes.get(agent)
+        if cls is None:
+            click.echo(click.style(
+                f"  Unknown agent '{agent}'. Known: "
+                f"{sorted(all_classes.keys())}", fg="red",
+            ), err=True)
+            raise click.Abort()
+        orch.register_agent(cls(config))
+    else:
+        for cls in all_classes.values():
+            try:
+                orch.register_agent(cls(config))
+            except Exception as exc:  # noqa: BLE001 — surface but don't crash
+                click.echo(click.style(
+                    f"  warning: failed to register {cls.__name__}: {exc}",
+                    fg="yellow",
+                ), err=True)
+
+    # Pull in any user plug-ins from TAO_PLUGIN_PATHS (or skip
+    # silently when the env var isn't set).
+    load_plugins(orch)
+
+    click.echo(f"\n  Registered agents: {len(orch.agents)}")
+    click.echo(f"  Task: {json.dumps(task_dict, indent=2)}")
+    click.echo()
+
+    result = orch.execute_task(task_dict)
+
+    status = result.get("status")
+    color = {"success": "green", "blocked": "yellow", "error": "red"}.get(
+        status, "white",
+    )
+    click.echo(click.style(f"  Status: {status}", fg=color, bold=True))
+    if "agent_name" in result and result["agent_name"]:
+        click.echo(f"  Agent:  {result['agent_name']}")
+    if "agent_result_status" in result and result["agent_result_status"]:
+        click.echo(f"  Agent status: {result['agent_result_status']}")
+    if "classification" in result:
+        click.echo(f"  Classification: {result['classification']}")
+    if status == "error" and "error" in result:
+        click.echo(click.style(f"  Error: {result['error']}", fg="red"))
+    output = result.get("output")
+    if isinstance(output, dict):
+        click.echo("\n  Output:")
+        click.echo(json.dumps(output, indent=2, default=str)[:2000])
 
     click.echo()
 
