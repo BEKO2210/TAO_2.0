@@ -49,9 +49,18 @@ modes are explicit opt-ins, gate-protected, and limit-bounded.
 
 1. **NEVER** request, store, log, or transmit **seed phrases or
    mnemonics** — full credentials never live in this system.
-2. **NEVER** request, store, log, or transmit **a coldkey private
-   key**. Auto-trading uses a hot key with a hard cap; the coldkey
-   stays out of this system entirely.
+2. **NEVER** request, store, log, or transmit a user's **main
+   coldkey** seed. ``AUTO_TRADING`` requires a **dedicated trading
+   key** stored in the encrypted keystore (Argon2id + AES-256-GCM),
+   funded only with the position-cap amount the user can afford to
+   lose. The user's main coldkey stays on a hardware wallet /
+   air-gapped machine and never touches this software. Bittensor's
+   ``stake`` / ``unstake`` / ``transfer`` extrinsics are
+   coldkey-signed at the protocol level, so the trading key
+   technically functions as a coldkey on-chain — that is precisely
+   why the position cap, daily-loss limit, and kill-switch exist
+   and why the keystore default refuses to do anything until the
+   operator sets ``TAO_LIVE_TRADING=1``.
 3. `WATCH_ONLY` mode accepts public addresses only.
 4. No cloud telemetry; everything runs locally.
 
@@ -59,15 +68,23 @@ modes are explicit opt-ins, gate-protected, and limit-bounded.
 
 5. The `ApprovalGate` continues to classify every action; in
    `AUTO_TRADING` mode it routes `DANGER` actions to the audited
-   `auto_trader` execution path **only** when all of these are
-   satisfied: kill-switch off, hot-key configured, position-size
-   limit set, daily-loss-limit set, strategy explicitly opted in.
+   `Executor` execution path **only** when all of these are
+   satisfied: kill-switch off, keystore configured + unlocked,
+   position-size limit set, daily-loss-limit set, strategy
+   explicitly opted in (``StrategyMeta.live_trading=True``).
 6. Any one of {kill-switch on, daily-loss-limit hit, position-size
-   exceeded, hot-key missing, strategy not opted in} forces the
-   gate back to "plan only" output.
-7. The auto-trader's hot-key handling, signing path, and broadcast
-   path are isolated in their own module so the read-only swarm
-   stays read-only by construction.
+   exceeded, keystore missing, strategy not opted in,
+   ``TAO_LIVE_TRADING`` env var not set, no signer factory wired}
+   forces the gate back to "paper-only" output.
+7. The signing/broadcast path lives in its own module
+   (`tao_swarm.trading.signer`) so the read-only swarm stays
+   read-only by construction. Importing the signer module does not
+   load the bittensor SDK; the SDK is loaded lazily inside
+   ``BittensorSigner.submit()``.
+8. Every live attempt — success, refusal, or error — is recorded
+   in the paper ledger as a non-paper row so the audit trail is
+   complete. Failed attempts get the action suffix ``_failed``
+   and ``tx_hash=None``.
 
 If a change could weaken any of these rules, stop and ask.
 

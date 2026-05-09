@@ -1,12 +1,10 @@
 """
 Trading module — opt-in ``AUTO_TRADING`` mode primitives.
 
-This module is the audited execution path for the
-``AUTO_TRADING`` operating mode introduced in PR #45. Nothing in
-here signs or broadcasts a real transaction yet; PR 2A delivers
-only the safety scaffolding (modes, guards, paper ledger,
-strategy ABC, paper-default executor). The real signing path
-lands later (PR 2E) once the keystore (PR 2C) is in place.
+The audited execution path for the ``AUTO_TRADING`` operating mode
+introduced in PR #45. With PR 2E in place this module CAN now sign
+and broadcast real Bittensor extrinsics — but only when every guard
+in the multi-stage authorisation chain consents.
 
 Always-on safety architecture (mirrors CLAUDE.md):
 
@@ -16,25 +14,32 @@ Always-on safety architecture (mirrors CLAUDE.md):
   ``DANGER`` actions to the audited ``Executor`` only when ALL of
   these are satisfied:
     1. ``KillSwitch`` is off.
-    2. Hot key is configured (PR 2C).
+    2. Keystore is configured and unlocked (PR 2C).
     3. ``PositionCap`` is set and the requested size fits.
     4. ``DailyLossLimit`` is set and not breached.
-    5. The strategy explicitly opted in (declared its risk surface).
+    5. The strategy explicitly opted in (``StrategyMeta.live_trading``).
 - Any one of those failing forces a "paper-only" output.
-- The signing/broadcast path lives in its own module so the
-  read-only swarm stays read-only by construction.
+- The live path runs a SECOND three-step gate
+  (:func:`authorise_live_trade`) before signing: env var
+  ``TAO_LIVE_TRADING=1`` + signer factory wired up + strategy
+  meta opt-in. All three must hold.
 
 Public surface
 --------------
 
 - :class:`WalletMode` — the four operating modes.
-- :class:`KillSwitch` — file/env flag, append-only reason log.
-- :class:`PositionCap` — per-position and total-exposure cap.
-- :class:`DailyLossLimit` — UTC-day P&L floor.
-- :class:`PaperLedger` — SQLite-backed paper-trade book.
-- :class:`Strategy` — abstract base class for strategy plug-ins.
-- :class:`TradeProposal` — what a strategy emits.
-- :class:`Executor` — routes a proposal through guards, paper-default.
+- :class:`KillSwitch` / :class:`PositionCap` /
+  :class:`DailyLossLimit` — guards.
+- :class:`PaperLedger` — SQLite-backed paper + live trade book.
+- :class:`Keystore` / :class:`SignerHandle` — encrypted hot-key
+  storage with one-shot seed access.
+- :class:`Strategy` / :class:`StrategyMeta` / :class:`TradeProposal`
+  — strategy ABC and value types.
+- :class:`Executor` — routes a proposal through guards.
+- :class:`BittensorSigner` / :func:`authorise_live_trade` /
+  :class:`SubmitReceipt` — live signing path (PR 2E).
+- :class:`Backtester` / :class:`BacktestResult` — deterministic
+  paper-only harness over historical snapshots.
 """
 
 from __future__ import annotations
@@ -56,11 +61,29 @@ from tao_swarm.trading.keystore import (
 )
 from tao_swarm.trading.ledger import PaperLedger, TradeRecord
 from tao_swarm.trading.modes import WalletMode
+from tao_swarm.trading.signer import (
+    LIVE_TRADING_ENV,
+    LIVE_TRADING_MAGIC_VALUE,
+    SUPPORTED_ACTIONS,
+    AuthorizationError,
+    BittensorSigner,
+    BroadcastError,
+    LiveSignerError,
+    SignerConfigError,
+    SubmitReceipt,
+    authorise_live_trade,
+)
 from tao_swarm.trading.strategy_base import Strategy, StrategyMeta, TradeProposal
 
 __all__ = [
+    "LIVE_TRADING_ENV",
+    "LIVE_TRADING_MAGIC_VALUE",
+    "SUPPORTED_ACTIONS",
+    "AuthorizationError",
     "BacktestResult",
     "Backtester",
+    "BittensorSigner",
+    "BroadcastError",
     "DailyLossLimit",
     "ExecResult",
     "Executor",
@@ -69,13 +92,17 @@ __all__ = [
     "KeystoreError",
     "KeystoreFormatError",
     "KeystoreInfo",
+    "LiveSignerError",
     "PaperLedger",
     "PositionCap",
+    "SignerConfigError",
     "SignerHandle",
     "Strategy",
     "StrategyMeta",
+    "SubmitReceipt",
     "TradeProposal",
     "TradeRecord",
     "WalletMode",
     "WrongPasswordError",
+    "authorise_live_trade",
 ]
