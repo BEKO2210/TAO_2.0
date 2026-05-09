@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a0a12">
+<title>TAO Swarm — Local-first multi-agent intelligence for Bittensor</title>
+<meta name="description" content="A locally-run, read-only multi-agent system for researching Bittensor (TAO). 15 specialized agents, ApprovalGate safety, plug-in architecture. Source-available under BUSL-1.1.">
+<meta property="og:title" content="TAO Swarm">
+<meta property="og:description" content="Local-first multi-agent intelligence for Bittensor. Read-only by construction. Source-available.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1a2e'/%3E%3Ctext x='50%25' y='52%25' fill='%237dd3fc' font-family='monospace' font-size='14' text-anchor='middle' dominant-baseline='middle'%3E%CF%84%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a href="#main" class="skip">Skip to content</a>
+
+<header class="nav">
+  <div class="nav-inner">
+    <a href="/" class="brand">
+      <span class="brand-mark">τ</span>
+      <span class="brand-text">TAO Swarm</span>
+    </a>
+    <nav>
+      <a href="#what">What</a>
+      <a href="#how">How</a>
+      <a href="#proof">Proof</a>
+      <a href="#license">License</a>
+      <a href="#roadmap">Roadmap</a>
+      <span class="lang">
+        <a href="index.html" class="active">EN</a>·<a href="de.html">DE</a>
+      </span>
+      <a href="https://github.com/BEKO2210/TAO_2.0" class="cta">GitHub →</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">v1.0 · Beta · BUSL-1.1</div>
+    <h1>
+      A multi-agent intelligence system<br>
+      for <span class="grad">Bittensor</span>, that runs<br>
+      <span class="grad-2">on your own machine</span>.
+    </h1>
+    <p class="lead">
+      15 specialized agents coordinated by a central orchestrator with a
+      gate-before-route approval layer. Reads the live Bittensor chain,
+      Subscan, CoinGecko, and GitHub. Never auto-signs, never stores
+      seeds, never phones home.
+    </p>
+    <div class="cta-row">
+      <a href="https://github.com/BEKO2210/TAO_2.0" class="btn-primary">View on GitHub</a>
+      <a href="#proof" class="btn-secondary">See it run live</a>
+    </div>
+    <div class="badges">
+      <span class="badge">547 tests passing</span>
+      <span class="badge">10 live smokes</span>
+      <span class="badge">129 mainnet subnets read</span>
+      <span class="badge">no telemetry</span>
+    </div>
+  </div>
+  <div class="hero-bg" aria-hidden="true"></div>
+</section>
+
+<section id="what" class="section">
+  <div class="section-inner">
+    <div class="section-head">
+      <span class="kicker">What it is</span>
+      <h2>A read-only research swarm.<br>Not a trading bot.</h2>
+    </div>
+    <div class="grid-3">
+      <div class="card">
+        <div class="card-num">01</div>
+        <h3>15 specialized agents</h3>
+        <p>System check, protocol research, subnet discovery and scoring,
+        watch-only wallet, market analysis, risk review, miner / validator
+        engineering, training, infra, dashboard, fullstack, QA, docs.</p>
+      </div>
+      <div class="card">
+        <div class="card-num">02</div>
+        <h3>Gate before route</h3>
+        <p>Every action is classified <code>SAFE</code> / <code>CAUTION</code> /
+        <code>DANGER</code> before the router ever sees it. DANGER outputs
+        a plan only — execute_trade, sign_transaction, stake, unstake,
+        swap_coldkey, reveal_seed are all blocked by construction.</p>
+      </div>
+      <div class="card">
+        <div class="card-num">03</div>
+        <h3>Plug-in architecture</h3>
+        <p>Drop your own <code>*_agent.py</code> in a folder, set
+        <code>TAO_PLUGIN_PATHS</code>, done. Or ship as a pip package via
+        the <code>tao.agents</code> entry point. Plug-ins go through the
+        same gate as built-ins. No privilege escalation.</p>
+      </div>
+      <div class="card">
+        <div class="card-num">04</div>
+        <h3>Wallet stays in your hands</h3>
+        <p>Default mode is <code>NO_WALLET</code>.
+        <code>WATCH_ONLY</code> accepts public SS58 addresses only.
+        <code>MANUAL_SIGNING</code> emits unsigned plans — you sign on
+        a device we never touch. The system never asks for, stores, or
+        transmits seed phrases or private keys.</p>
+      </div>
+      <div class="card">
+        <div class="card-num">05</div>
+        <h3>Live data, real fallbacks</h3>
+        <p>Bittensor SDK 10.x against mainnet finney for 129+ subnets
+        with rich identity. Subscan for wallet snapshots. CoinGecko
+        for prices. Each path falls back to mock fixtures with a
+        labelled <code>_meta.fallback_reason</code> when the upstream
+        is unreachable — never silent.</p>
+      </div>
+      <div class="card">
+        <div class="card-num">06</div>
+        <h3>Local-only, no telemetry</h3>
+        <p>Everything runs on your machine. SQLite for state. No
+        analytics. No vendor SDKs that phone home. Outbound HTTPS
+        only to the data endpoints you explicitly opt into via
+        <code>--live</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="section section-alt">
+  <div class="section-inner">
+    <div class="section-head">
+      <span class="kicker">How it runs</span>
+      <h2>Three commands.</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>Install</h3>
+          <pre><code>git clone https://github.com/BEKO2210/TAO_2.0.git
+cd TAO_2.0
+python -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+pip install -e .</code></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Run mock</h3>
+          <pre><code>tao-swarm subnets
+tao-swarm score 1
+tao-swarm risk --content "Schedule_coldkey_swap to 5XYZ..."
+# → DANGER: coldkey_swap_social_engineering CRITICAL</code></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Go live</h3>
+          <pre><code>pip install bittensor
+tao-swarm --live subnets   # 129 real Mainnet subnets
+tao-swarm --live market    # real CoinGecko price + 24h
+tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="proof" class="section">
+  <div class="section-inner">
+    <div class="section-head">
+      <span class="kicker">Proof</span>
+      <h2>It actually works.</h2>
+      <p class="subhead">Verified end-to-end against real Mainnet, Subscan, and CoinGecko.</p>
+    </div>
+    <div class="grid-2">
+      <div class="terminal">
+        <div class="term-bar"><span></span><span></span><span></span></div>
+        <pre><code><span class="term-prompt">$</span> tao-swarm --live subnets --limit 5
+
+  === Bittensor Subnets ===
+  MODE: live (network=finney)
+
+   ID  Name        Sym     TAO_in       Volume
+ ----  ----------- --- ---------- ------------
+    0  root          τ  5,265,535   49,109,601
+    1  Apex          α     28,580      776,968
+    4  Targon        δ    133,782    2,011,066
+    8  Vanta         θ     85,632    1,307,691
+   64  Chutes        χ    201,143      ...
+
+  Total: 129 subnets</code></pre>
+      </div>
+      <div class="terminal">
+        <div class="term-bar"><span></span><span></span><span></span></div>
+        <pre><code><span class="term-prompt">$</span> tao-swarm --live run --task \
+    '{"type": "execute_trade", "amount": 100}'
+
+  === Orchestrator Run ===
+  MODE: live (network=finney)
+
+  Status: <span class="term-warn">blocked</span>
+  Classification: <span class="term-warn">DANGER</span>
+
+  Output:
+  {
+    "plan": { "type": "execute_trade", "amount": 100 },
+    "note": "DANGER action. Manual approval required."
+  }</code></pre>
+      </div>
+    </div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-value">547</div>
+        <div class="metric-label">tests passing on every commit</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value">10</div>
+        <div class="metric-label">live smoke tests against real endpoints</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value">3.10 — 3.12</div>
+        <div class="metric-label">Python versions covered in CI</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value">0</div>
+        <div class="metric-label">automated value-moving actions, by design</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="license" class="section section-alt">
+  <div class="section-inner">
+    <div class="section-head">
+      <span class="kicker">License</span>
+      <h2>Source-available, free for non-production.<br>Open Source on 2030-01-01.</h2>
+    </div>
+    <div class="grid-2">
+      <div class="lic-card lic-allowed">
+        <h3>Free for Non-Production Use</h3>
+        <ul>
+          <li>Personal, educational, research, evaluation</li>
+          <li>Teams up to five people</li>
+          <li>Read-only research, mock-mode development</li>
+          <li>Writing and testing your own plug-ins</li>
+          <li>Forking, modifying, and redistributing under the same terms</li>
+        </ul>
+      </div>
+      <div class="lic-card lic-denied">
+        <h3>Requires Commercial License</h3>
+        <ul>
+          <li>Hosting as a service for third parties</li>
+          <li>Automated trading, staking, or signing decisions</li>
+          <li>Embedding in a product you sell or distribute</li>
+          <li>Production deployments of any kind</li>
+          <li>Use beyond the Additional Use Grant in <a href="https://github.com/BEKO2210/TAO_2.0/blob/main/LICENSE">LICENSE</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <strong>Change Date 2030-01-01.</strong>
+      On that date the license auto-converts to <strong>Apache License 2.0</strong>.
+      The Non-Production restriction lifts and the project becomes fully Open Source.
+      <br>
+      <a href="https://github.com/BEKO2210/TAO_2.0/blob/main/LICENSE">Read the full license</a> ·
+      <a href="https://github.com/BEKO2210/TAO_2.0/blob/main/DISCLAIMER.md">Read the disclaimer</a>
+    </div>
+  </div>
+</section>
+
+<section id="roadmap" class="section">
+  <div class="section-inner">
+    <div class="section-head">
+      <span class="kicker">Roadmap &amp; monetization</span>
+      <h2>Honest plan. No tokens. No promises.</h2>
+      <p class="subhead">
+        We do not have a token. We will not launch a token. The project's
+        long-term sustainability is funded by commercial licensing and
+        optional support — not by selling speculation.
+      </p>
+    </div>
+    <div class="roadmap">
+      <div class="rm-row">
+        <div class="rm-when">Now</div>
+        <div class="rm-what">
+          <h3>Public Beta · BUSL-1.1</h3>
+          <p>Source-available, free for non-production. Active development on the open-source repo. Issues and pull requests welcome.</p>
+        </div>
+      </div>
+      <div class="rm-row">
+        <div class="rm-when">Next 3–6 months</div>
+        <div class="rm-what">
+          <h3>Hardening &amp; documentation</h3>
+          <p>Wire the remaining template-stage agents to real data sources where it makes sense. Add typed agent-output artifacts (TypedDict / pydantic). Expand the live smoke suite. Publish the plug-in marketplace conventions.</p>
+        </div>
+      </div>
+      <div class="rm-row">
+        <div class="rm-when">When meaningful demand exists</div>
+        <div class="rm-what">
+          <h3>Commercial license tier</h3>
+          <p>Per-team and per-organisation production licenses. Pricing transparent and disclosed up front. No hidden enterprise quote-only pricing. Buying a license unlocks production use; the source stays the same.</p>
+        </div>
+      </div>
+      <div class="rm-row">
+        <div class="rm-when">Optional, later</div>
+        <div class="rm-what">
+          <h3>Managed hosted version</h3>
+          <p>If — and only if — there's clear demand for a hosted run-it-for-me option. Same code, same gate, same read-only architecture. Operated as a service. Separately licensed.</p>
+        </div>
+      </div>
+      <div class="rm-row">
+        <div class="rm-when">2030-01-01</div>
+        <div class="rm-what">
+          <h3>Apache 2.0 conversion</h3>
+          <p>The BUSL-1.1 Change Date triggers automatically. The Non-Production restriction lifts. The project becomes fully Open Source under Apache 2.0. This is contractual, not optional.</p>
+        </div>
+      </div>
+    </div>
+    <div class="rm-not">
+      <h4>Things this project will <em>not</em> do</h4>
+      <ul>
+        <li>Issue a token, NFT, points system, or any other speculative instrument.</li>
+        <li>Auto-execute trades, stakes, or any value-moving on-chain action.</li>
+        <li>Promise market returns, "alpha", or guaranteed yield.</li>
+        <li>Phone home with telemetry, analytics, or usage reporting.</li>
+        <li>Ask for, store, log, or transmit seed phrases or private keys.</li>
+        <li>Use your data for training, advertising, or third-party sales.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="section section-cta">
+  <div class="section-inner cta-block">
+    <h2>Run it locally. Read the license. Decide for yourself.</h2>
+    <div class="cta-row">
+      <a href="https://github.com/BEKO2210/TAO_2.0" class="btn-primary">Get the code</a>
+      <a href="https://github.com/BEKO2210/TAO_2.0/blob/main/DISCLAIMER.md" class="btn-secondary">Read the disclaimer first</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-brand">
+      <span class="brand-mark">τ</span>
+      <span>TAO Swarm — local-first multi-agent intelligence</span>
+    </div>
+    <nav class="foot-nav">
+      <a href="https://github.com/BEKO2210/TAO_2.0">GitHub</a>
+      <a href="https://github.com/BEKO2210/TAO_2.0/blob/main/LICENSE">License</a>
+      <a href="https://github.com/BEKO2210/TAO_2.0/blob/main/DISCLAIMER.md">Disclaimer</a>
+      <a href="imprint.html">Imprint</a>
+      <a href="privacy.html">Privacy</a>
+    </nav>
+    <div class="foot-fine">
+      Not financial, investment, tax, or legal advice. The Bittensor SDK,
+      Subscan, CoinGecko, and GitHub are operated by their respective
+      providers under their own terms. © 2026 BEKO2210. Source available
+      under BUSL-1.1, converting to Apache 2.0 on 2030-01-01.
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
