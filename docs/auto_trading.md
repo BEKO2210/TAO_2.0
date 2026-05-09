@@ -176,15 +176,62 @@ This is independent from the kill switch. The kill switch is for
 **you**; the circuit breaker is for **the bot when something
 upstream is broken**.
 
-## 9. What the runner does NOT do
+## 9. Cold-start reconciliation (PR 2G)
 
-- **Reconcile with chain truth.** The local position book is the
-  runner's bookkeeping; if your dedicated trading key gets used by
-  another tool concurrently, the local book will diverge from the
-  chain. Don't share the keystore.
-- **Re-derive on cold start.** If the runner restarts, the position
-  book is empty until the first stake/unstake. Cold-start
-  reconciliation against `wallet_watchonly` is on the roadmap.
+By default the runner's position book starts empty. After a
+restart, the next tick would see `current_total_tao = 0`, the
+position-cap arithmetic would be wrong by the entire amount you're
+already staked, and the runner could overshoot the operator cap.
+
+To fix this, pass your dedicated trading coldkey ss58 with
+`--reconcile-from-coldkey`:
+
+```bash
+tao-swarm --live --network finney trade run \
+    --strategy momentum_rotation \
+    --live --live-trading \
+    --keystore-path ~/.tao-swarm/live.keystore \
+    --reconcile-from-coldkey 5YourTradingColdkeySS58... \
+    --max-position-tao 1.0 \
+    --max-total-tao 10.0
+```
+
+On the first tick, the runner calls
+`Subtensor.get_stake_info_for_coldkey(coldkey_ss58)`, sums stake
+per netuid across all delegated hotkeys, and writes the result
+into its position book. The next proposal sees the right
+`current_total_tao` and the cap holds.
+
+Failure modes:
+
+- **Reader unreachable** (websocket dropped, RPC times out) — the
+  runner halts immediately with a clear `halted_reason`. It will
+  not attempt to trade with an unverified book.
+- **Coldkey has no stake** — empty book, business as usual.
+- **Multiple delegated hotkeys on the same netuid** — summed; the
+  cap arithmetic treats them as one aggregate position.
+
+Reconciliation runs **once per process start**. If you suspect the
+chain has diverged from your local book (concurrent manual trades,
+chain reorg) restart the runner.
+
+`status()` reports `last_reconcile_ts` and `reconciled_total_tao`
+so the operator / dashboard can audit whether reconciliation has
+happened in this process.
+
+**Important** — the reconciled book loses the per-position `entry`
+price; the chain doesn't tell us at what price you opened the
+position. The momentum strategy doesn't need entry price; the
+backtester (which runs in-memory only) is unaffected. Strategies
+that compute realised P&L using entry must tolerate `entry=0.0`
+on cold-start positions.
+
+## 10. What the runner does NOT do
+
+- **Reconcile mid-flight.** Reconciliation is one-shot at startup.
+  If your dedicated trading key gets used by another tool while
+  the runner is running, the local book will drift. Don't share
+  the keystore.
 - **Slippage / partial-fill modelling.** The backtester assumes a
   fill at the proposal's `price_tao`. Reality on AMM-style staking
   pools may differ.
@@ -192,8 +239,12 @@ upstream is broken**.
   now. You can run several runner processes pointing at different
   ledgers if you want a basket; cap budgets are not shared
   automatically.
+- **Chain-truth verification after each broadcast.** The signer
+  trusts the SDK's success/failure response. A future PR will add
+  a post-broadcast read to confirm the on-chain state matches
+  expectations.
 
-## 10. Where to look in the source
+## 11. Where to look in the source
 
 | Concern | File |
 |---|---|
@@ -207,6 +258,7 @@ upstream is broken**.
 | Keystore | [`tao_swarm/trading/keystore.py`](../tao_swarm/trading/keystore.py) |
 | Live signer | [`tao_swarm/trading/signer.py`](../tao_swarm/trading/signer.py) |
 | Runner loop | [`tao_swarm/trading/runner.py`](../tao_swarm/trading/runner.py) |
+| Cold-start reconciliation | [`tao_swarm/trading/reconcile.py`](../tao_swarm/trading/reconcile.py) |
 | CLI | [`tao_swarm/cli/tao_swarm.py`](../tao_swarm/cli/tao_swarm.py) |
 
 If you change any of these, run the full test suite — every layer

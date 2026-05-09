@@ -61,6 +61,12 @@ from tao_swarm.trading.keystore import (
 )
 from tao_swarm.trading.ledger import PaperLedger, TradeRecord
 from tao_swarm.trading.modes import WalletMode
+from tao_swarm.trading.reconcile import (
+    BittensorChainPositionReader,
+    ChainPositionReader,
+    ReconciledPosition,
+    aggregate_by_netuid,
+)
 from tao_swarm.trading.runner import (
     MarketStateBuilder,
     RunnerStatus,
@@ -87,8 +93,10 @@ __all__ = [
     "AuthorizationError",
     "BacktestResult",
     "Backtester",
+    "BittensorChainPositionReader",
     "BittensorSigner",
     "BroadcastError",
+    "ChainPositionReader",
     "DailyLossLimit",
     "ExecResult",
     "Executor",
@@ -101,6 +109,7 @@ __all__ = [
     "MarketStateBuilder",
     "PaperLedger",
     "PositionCap",
+    "ReconciledPosition",
     "RunnerStatus",
     "SignerConfigError",
     "SignerHandle",
@@ -112,5 +121,6 @@ __all__ = [
     "TradingRunner",
     "WalletMode",
     "WrongPasswordError",
+    "aggregate_by_netuid",
     "authorise_live_trade",
 ]
