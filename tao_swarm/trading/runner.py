@@ -30,10 +30,13 @@ the orchestrator's tick, or a future systemd-managed daemon.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from tao_swarm.trading.executor import ExecResult, Executor
@@ -217,6 +220,7 @@ class TradingRunner:
         chain_reader: ChainPositionReader | None = None,
         reconcile_coldkey_ss58: str | None = None,
         auto_reconcile: bool = True,
+        status_file: str | Path | None = None,
     ) -> None:
         if tick_interval_s <= 0:
             raise ValueError("tick_interval_s must be > 0")
@@ -240,6 +244,7 @@ class TradingRunner:
         self._reconcile_coldkey = reconcile_coldkey_ss58
         self._auto_reconcile = bool(auto_reconcile) and chain_reader is not None
         self._reconciled_once = False
+        self._status_file = Path(status_file) if status_file else None
 
         self._positions: dict[int, _Position] = {}
         self._ticks = 0
@@ -361,6 +366,26 @@ class TradingRunner:
         """
         self._stop_event.set()
 
+    def dump_status(self, path: str | Path) -> None:
+        """Write :meth:`status` as JSON to ``path`` atomically.
+
+        The dashboard reads this file to display runner state without
+        any IPC. Atomic write (tmp → fsync → rename) so a concurrent
+        reader never sees a half-written file.
+        """
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = self.status().as_dict()
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        data = json.dumps(payload, indent=2)
+        tmp.write_text(data, encoding="utf-8")
+        try:
+            with tmp.open("rb") as fh:
+                os.fsync(fh.fileno())
+        except (OSError, AttributeError):
+            pass
+        os.replace(tmp, target)
+
     def tick(self) -> list[ExecResult]:
         """Run one iteration: snapshot → strategy.evaluate → execute.
 
@@ -456,6 +481,7 @@ class TradingRunner:
             with self._lock:
                 self._consecutive_errors = 0
                 self._last_error = None
+        self._maybe_dump_status()
         return results
 
     def run_forever(self, *, max_ticks: int | None = None) -> None:
@@ -521,6 +547,22 @@ class TradingRunner:
             if pos.size <= 1e-9:
                 self._positions.pop(uid, None)
         # Other actions don't modify our local position book.
+
+    def _maybe_dump_status(self) -> None:
+        """If a status_file was configured, write the current status.
+
+        Failures during dump are logged but never propagate — the
+        runner cannot block on filesystem errors.
+        """
+        if self._status_file is None:
+            return
+        try:
+            self.dump_status(self._status_file)
+        except Exception as exc:  # pragma: no cover - filesystem noise
+            logger.warning(
+                "TradingRunner status-file dump failed (%s): %s",
+                self._status_file, exc,
+            )
 
     def _record_error(self, reason: str) -> None:
         with self._lock:
