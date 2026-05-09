@@ -1,4 +1,7 @@
-# TAO / Bittensor Multi-Agent Intelligence System
+<div align="center">
+  <img src="Logo.png" alt="TAO Swarm" width="160">
+  <h1>TAO / Bittensor Multi-Agent Intelligence System</h1>
+</div>
 
 > Ein lokales, **read-only** Multi-Agentensystem zur Recherche, Analyse und Entscheidungsunterstützung im Bittensor (TAO)-Ökosystem. 15 spezialisierte Agenten arbeiten als Schwarm unter zentraler Governance — und du kannst eigene Agenten als **Plug-ins** hinzufügen.
 
