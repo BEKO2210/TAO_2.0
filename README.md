@@ -25,34 +25,151 @@
 > Lizenzvereinbarung mit dem Lizenzgeber. Vor jedem Zugriff bitte
 > [LICENSE](LICENSE) und [DISCLAIMER.md](DISCLAIMER.md) lesen.
 
-[![Tests](https://img.shields.io/badge/tests-547%20passing-brightgreen)]() [![License](https://img.shields.io/badge/license-Proprietary-red)](LICENSE) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]() [![Status](https://img.shields.io/badge/status-Beta-yellow)]()
+<div align="center">
+
+[![Tests](https://img.shields.io/badge/tests-877%20passing-brightgreen)]() [![Live](https://img.shields.io/badge/live%20smoke-12%20passing-brightgreen)]() [![License](https://img.shields.io/badge/license-Proprietary-red)](LICENSE) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]() [![Status](https://img.shields.io/badge/status-Beta-yellow)]()
+
+</div>
 
 ---
 
-## Inhaltsverzeichnis
+<div align="center">
 
-- [Lizenz & rechtlicher Status](#lizenz--rechtlicher-status)
-- [Schnellüberblick](#schnellüberblick)
-- [Architektur](#architektur)
-- [Die 15 Agenten](#die-15-agenten)
-- [Plug-ins (eigene Agenten)](#plug-ins-eigene-agenten)
-- [AUTO_TRADING (Trading-Pipeline)](#auto_trading-trading-pipeline)
-- [Projektstruktur](#projektstruktur)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [CLI-Modi: --mock vs --live](#cli-modi---mock-vs---live)
-- [ApprovalGate (Safety-Layer)](#approvalgate-safety-layer)
-- [Bittensor-spezifische Sicherheits-Detektoren](#bittensor-spezifische-sicherheits-detektoren)
-- [Subnet-Scoring (15 Kriterien)](#subnet-scoring-15-kriterien)
-- [Wallet-Sicherheit](#wallet-sicherheit)
-- [Benchmarks](#benchmarks)
-- [Tests entwickeln](#tests-entwickeln)
-- [Sicherheitshinweise](#sicherheitshinweise)
-- [Disclaimer](#disclaimer)
+## 🚀 Quick Start (5 Minuten)
+
+</div>
+
+```bash
+# 1) Install
+git clone https://github.com/BEKO2210/TAO_2.0.git && cd TAO_2.0
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+
+# 2) Live Mainnet Read-Only Check (129 reale Subnets)
+tao-swarm --live --network finney subnets --limit 5
+
+# 3) Adaptive Ensemble paper-tradet (kein Risk, kein Wallet)
+tao-swarm --live --network finney trade run \
+    --strategy ensemble:all \
+    --paper \
+    --tick-interval-s 60 \
+    --status-file data/runner_status.json
+
+# 4) Dashboard (zweites Terminal)
+tao-swarm dashboard
+```
+
+<div align="center">
+
+**👉 Komplette Schritt-für-Schritt Anleitung: [`docs/getting_started.md`](docs/getting_started.md)**
+
+</div>
 
 ---
 
-## Lizenz & rechtlicher Status
+<div align="center">
+
+## 📸 Live Output Preview
+
+</div>
+
+<details open>
+<summary><b>1. Live Mainnet Subnets</b> — <code>tao-swarm --live --network finney subnets --limit 5</code></summary>
+
+```
+=== Bittensor Subnets ===
+  MODE: live (network=finney)  — pass --mock for offline fixtures
+
+    ID  Name                 Sym     TAO_in       Volume  Description
+  ----  -------------------- --- ---------- ------------  ------------------------------
+     0  root                   Τ  5,267,561   49,122,477
+     1  Apex                   α     28,385      777,170  Open competitions for algorithmic and ag
+     2  DSperse                β     10,600      664,990  Verifiable and distributed inference on
+     3  deprecated             γ     76,363    2,996,778  deprecated
+     4  Targon                 δ    133,561    2,011,648  Incentivized Compute Marketplace powered
+
+  Total: 129 subnets
+```
+
+</details>
+
+<details open>
+<summary><b>2. Learning Report</b> — <code>tao-swarm trade learning-report --window-days 14</code></summary>
+
+```
+  Learning report — window 14 days, max 200 trades, min 5 closes
+
+    strategy            attempts closes   pnl_tao  win_rate  sharpe  data
+    -----------------   -------- ------  --------  --------  ------  ----
+    momentum_rotation         15     15  +37.5560    100.0%  +2.674    ok
+    mean_reversion            15     15  -13.6778     26.7%  -0.589    ok
+
+  Suggested ensemble weights:
+    momentum_rotation       ████████████████████████████··   95.5%
+    mean_reversion          █·····························    4.5%
+```
+
+Der Bot allokiert automatisch dahin. Du machst nichts.
+
+</details>
+
+<details>
+<summary><b>3. Dashboard Trading Panel</b> — <code>tao-swarm dashboard</code> → Trading-Tab</summary>
+
+> Streamlit-Dashboard mit Live-Runner-Status, Equity-Curves Overlay,
+> Per-Strategy KPIs, Suggested-Weight-Bars, Halt-Button, In-Page-
+> Backtest. Screenshot wird vom Operator nach erstem Run hier
+> ergänzt — bis dahin: `tao-swarm dashboard` → linke Sidebar →
+> **Trading**.
+>
+> **Layout (5 Sektionen, top-down):**
+>
+> 1. **Runner-Status:** State-Badge, Strategy, Mode, Last Tick + Counter (Ticks/Executed/Refused/Errors)
+> 2. **Halt-Runner Button:** One-Click Kill-Switch
+> 3. **Per-Strategy Performance:** Tabelle pro Base mit P&L / Win-Rate / Sharpe / Weight
+> 4. **Equity Curves:** Multi-Line Overlay aller Strategien
+> 5. **Backtest Mini-Panel:** Snapshots-Upload + Run
+
+</details>
+
+---
+
+## 📑 Inhaltsverzeichnis
+
+**Wichtig & default-aufgeklappt:**
+
+- [⚖️ Lizenz & rechtlicher Status](#-lizenz--rechtlicher-status)
+- [📊 Schnellüberblick](#-schnellüberblick)
+- [🤖 AUTO_TRADING (Trading-Pipeline)](#-auto_trading-trading-pipeline)
+- [🛡️ ApprovalGate (Safety-Layer)](#%EF%B8%8F-approvalgate-safety-layer)
+- [🔐 Wallet-Sicherheit](#-wallet-sicherheit)
+- [⚠️ Sicherheitshinweise](#%EF%B8%8F-sicherheitshinweise)
+- [📜 Disclaimer](#-disclaimer)
+
+**Detailthemen — collapsibles, click to expand:**
+
+- 📐 Architektur
+- 🤖 Die 15 Agenten
+- 🔌 Plug-ins (eigene Agenten)
+- 📁 Projektstruktur
+- ⚙️ Installation
+- 📜 CLI-Reference (alle Commands)
+- 🔍 Bittensor-spezifische Sicherheits-Detektoren
+- 📊 Subnet-Scoring (15 Kriterien)
+- ⚡ Benchmarks
+- 🧪 Tests entwickeln
+
+**Komplette Anleitungen:**
+
+- [`docs/getting_started.md`](docs/getting_started.md) — One-Page Walkthrough von `git clone` bis Live
+- [`docs/auto_trading.md`](docs/auto_trading.md) — Operator-Setup für Auto-Trading
+- [`docs/strategy_plugins.md`](docs/strategy_plugins.md) — Eigene Strategien schreiben
+- [`docs/learning.md`](docs/learning.md) — Adaptive Ensemble + Performance-Tracker
+- [`docs/plugins.md`](docs/plugins.md) — Eigene Agenten schreiben
+
+---
+
+## ⚖️ Lizenz & rechtlicher Status
 
 Dieses Projekt ist **proprietär**. Alle Rechte vorbehalten.
 
@@ -90,7 +207,7 @@ dem Lizenzwechsel (siehe Git-Log) sind ausschließlich proprietär.
 
 ---
 
-## Schnellüberblick
+## 📊 Schnellüberblick
 
 | Bereich | Stand |
 |---|---|
@@ -105,9 +222,13 @@ dem Lizenzwechsel (siehe Git-Log) sind ausschließlich proprietär.
 | **Distribution** | `pip install -e .` mit Console-Script `tao-swarm`. Lokal-only, kein Cloud-Telemetry. Optional Streamlit-Dashboard. |
 | **Lizenz** | Proprietär — All Rights Reserved. Nutzung nur mit separater schriftlicher Lizenz. |
 
+Aktualisiert: **877 default Tests + 12 Live-Smoke** (von 547 vor dem
+AUTO_TRADING-Pivot). Build-Status: **alle grün, ruff clean**.
+
 ---
 
-## Architektur
+<details>
+<summary><h2 style="display:inline">📐 Architektur</h2></summary>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -162,9 +283,12 @@ dem Lizenzwechsel (siehe Git-Log) sind ausschließlich proprietär.
 | **Local-only** | Keine Cloud-Telemetrie. SQLite. |
 | **Erweiterbar** | Plug-in-System für eigene Agenten — gleicher Sicherheits-Layer, kein Privilege-Escalation. |
 
+</details>
+
 ---
 
-## Die 15 Agenten
+<details>
+<summary><h2 style="display:inline">🤖 Die 15 Agenten</h2></summary>
 
 Alle Agenten in `tao_swarm/agents/` folgen dem SPEC.md-Kontrakt: `run` / `get_status` / `validate_input` + `AGENT_NAME` / `AGENT_VERSION` (Modul-Konstanten).
 
@@ -203,9 +327,12 @@ class MyAgent:
 
 Der Orchestrator publiziert die Agent-Ausgabe nach jedem erfolgreichen Run unter `<agent_name>` ins Context-Objekt. Failed runs (`status: error`) werden übersprungen, damit kein partieller Report gecached wird.
 
+</details>
+
 ---
 
-## Plug-ins (eigene Agenten)
+<details>
+<summary><h2 style="display:inline">🔌 Plug-ins (eigene Agenten)</h2></summary>
 
 Du kannst eigene Agenten **außerhalb dieses Repos** schreiben und zur Laufzeit einklinken. Volle Anleitung: `docs/plugins.md`.
 
@@ -261,9 +388,11 @@ Plug-ins durchlaufen die **gleiche** ApprovalGate wie Built-ins. Loading ändert
 
 Vollständige Doku: [`docs/plugins.md`](docs/plugins.md).
 
+</details>
+
 ---
 
-## AUTO_TRADING (Trading-Pipeline)
+## 🤖 AUTO_TRADING (Trading-Pipeline)
 
 Zusätzlich zum Read-Only Multi-Agenten-Swarm gibt es einen
 **opt-in** AUTO_TRADING-Modus, in dem das System echte Bittensor-
@@ -373,7 +502,8 @@ Schritt-für-Schritt für eine sichere Live-Aktivierung:
 
 ---
 
-## Projektstruktur
+<details>
+<summary><h2 style="display:inline">📁 Projektstruktur</h2></summary>
 
 ```
 TAO_2.0/
@@ -495,9 +625,12 @@ TAO_2.0/
     └── results/                     # Per-Run JSON snapshots (gitignored)
 ```
 
+</details>
+
 ---
 
-## Installation
+<details>
+<summary><h2 style="display:inline">⚙️ Installation</h2></summary>
 
 > **Hinweis:** Diese Software ist proprietär (siehe [LICENSE](LICENSE)).
 > Die unten aufgeführten Schritte gelten für lizensierte Nutzer und
@@ -560,9 +693,14 @@ pytest -m network tests/test_live_smoke.py -v
 # → 10 passed in ~30s
 ```
 
+</details>
+
 ---
 
-## Quick Start
+<details>
+<summary><h2 style="display:inline">📜 CLI-Reference (alle Commands)</h2></summary>
+
+### Klassisches Quick Start (mock + live)
 
 ```bash
 # 1) System-Check (mock — keine Netz-Calls)
@@ -603,9 +741,7 @@ tao-swarm --live run --task '{"type": "execute_trade", "amount": 100}'
 tao-swarm dashboard
 ```
 
----
-
-## CLI-Modi: `--mock` vs `--live`
+### CLI-Modi: `--mock` vs `--live`
 
 | Flag | Wirkung |
 |------|---------|
@@ -629,9 +765,11 @@ Wenn der Live-Pfad fehlschlägt (z.B. bittensor SDK nicht installiert), gibt's e
   fallback: bittensor SDK not installed; install via `pip install bittensor`
 ```
 
+</details>
+
 ---
 
-## ApprovalGate (Safety-Layer)
+## 🛡️ ApprovalGate (Safety-Layer)
 
 Jede Action wird klassifiziert vor jedem Routing:
 
@@ -653,7 +791,8 @@ out = orch.execute_task({"type": "execute_trade", "amount": 100})
 
 ---
 
-## Bittensor-spezifische Sicherheits-Detektoren
+<details>
+<summary><h2 style="display:inline">🔍 Bittensor-spezifische Sicherheits-Detektoren</h2></summary>
 
 Drei real-incident-driven Detektoren in `RiskSecurityAgent` (alle in `general_review` automatisch aktiv):
 
@@ -688,9 +827,12 @@ agent.scan_coldkey_swap_pattern(
 - Take > 18%
 - Pending coldkey-swap → automatisch **STOP**
 
+</details>
+
 ---
 
-## Subnet-Scoring (15 Kriterien)
+<details>
+<summary><h2 style="display:inline">📊 Subnet-Scoring (15 Kriterien)</h2></summary>
 
 `SubnetScorer` produziert einen 0–100 Score über **15 gewichtete Kriterien**:
 
@@ -730,9 +872,11 @@ scorer.score_subnet({"netuid": 12, "metagraph": {...}, "taoflow": {...}})
 # }
 ```
 
+</details>
+
 ---
 
-## Wallet-Sicherheit
+## 🔐 Wallet-Sicherheit
 
 ### Modi
 
@@ -756,7 +900,8 @@ scorer.score_subnet({"netuid": 12, "metagraph": {...}, "taoflow": {...}})
 
 ---
 
-## Benchmarks
+<details>
+<summary><h2 style="display:inline">⚡ Benchmarks</h2></summary>
 
 ```bash
 make bench           # alle (mock — keine Netz-Calls)
@@ -783,9 +928,12 @@ DANGER block: 5.8µs/task (gate is essentially free)
 
 JSON snapshots werden nach `bench/results/<category>-<timestamp>.json` geschrieben (gitignored).
 
+</details>
+
 ---
 
-## Tests entwickeln
+<details>
+<summary><h2 style="display:inline">🧪 Tests entwickeln</h2></summary>
 
 ```bash
 pytest -q                            # 368 passing, 1 deselected
@@ -805,9 +953,11 @@ npx hygen doc new
 npx hygen plugin new       # external plug-in (out-of-tree, dein Repo)
 ```
 
+</details>
+
 ---
 
-## Sicherheitshinweise
+## ⚠️ Sicherheitshinweise
 
 ### Kritische Regeln (von ApprovalGate erzwungen)
 
@@ -832,7 +982,7 @@ Plug-in schreiben, das deine eigenen Detektoren / Heuristiken implementiert. Plu
 
 ---
 
-## Disclaimer
+## 📜 Disclaimer
 
 > **Dies ist eine Zusammenfassung. Die volle, rechtsverbindliche Fassung steht in [DISCLAIMER.md](DISCLAIMER.md). Vor der Nutzung lesen.**
 

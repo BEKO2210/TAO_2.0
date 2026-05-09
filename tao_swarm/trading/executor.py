@@ -196,6 +196,37 @@ class Executor:
             status="refused", paper=paper, reason=reason, proposal=proposal,
         )
 
+    @staticmethod
+    def _effective_strategy(proposal: TradeProposal, strategy_name: str) -> str:
+        """Resolve the strategy name to write into the ledger row.
+
+        When :class:`tao_swarm.trading.learning.EnsembleStrategy` emits
+        a proposal it stamps ``_base_strategy`` into ``target``. The
+        executor uses that as the ledger's ``strategy`` column so per-
+        strategy panels report real per-base performance, while the
+        full ``[ensemble:<base> w=…]`` provenance stays in the note.
+        """
+        base = proposal.target.get("_base_strategy") if isinstance(proposal.target, dict) else None
+        if isinstance(base, str) and base:
+            return base
+        return strategy_name
+
+    @staticmethod
+    def _scrub_target(proposal: TradeProposal) -> dict:
+        """Strip the ensemble-internal ``_*`` keys before persisting.
+
+        The ledger row preserves business fields (netuid, hotkey, ...)
+        but not the bookkeeping fields the EnsembleStrategy uses to
+        signal the executor. The originating provenance lives in the
+        ``note`` column already.
+        """
+        if not isinstance(proposal.target, dict):
+            return {}
+        return {
+            k: v for k, v in proposal.target.items()
+            if not (isinstance(k, str) and k.startswith("_"))
+        }
+
     def _record_paper(
         self, proposal: TradeProposal, strategy_name: str,
     ) -> ExecResult:
@@ -205,9 +236,9 @@ class Executor:
         from tao_swarm.trading.ledger import TradeRecord
 
         record = TradeRecord(
-            strategy=strategy_name,
+            strategy=self._effective_strategy(proposal, strategy_name),
             action=proposal.action,
-            target=dict(proposal.target),
+            target=self._scrub_target(proposal),
             amount_tao=proposal.amount_tao,
             price_tao=proposal.price_tao,
             realised_pnl_tao=0.0,
@@ -296,9 +327,9 @@ class Executor:
             verify_suffix = f" | verified: {receipt.verify_message}"
 
         record = TradeRecord(
-            strategy=strategy_name,
+            strategy=self._effective_strategy(proposal, strategy_name),
             action=action,
-            target=dict(proposal.target),
+            target=self._scrub_target(proposal),
             amount_tao=proposal.amount_tao,
             price_tao=proposal.price_tao,
             realised_pnl_tao=0.0,
@@ -331,9 +362,9 @@ class Executor:
 
         try:
             self._ledger.record_trade(TradeRecord(
-                strategy=strategy_name,
+                strategy=self._effective_strategy(proposal, strategy_name),
                 action=f"{proposal.action}_failed",
-                target=dict(proposal.target),
+                target=self._scrub_target(proposal),
                 amount_tao=proposal.amount_tao,
                 price_tao=proposal.price_tao,
                 realised_pnl_tao=0.0,
