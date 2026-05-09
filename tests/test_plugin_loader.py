@@ -38,7 +38,7 @@ from src.orchestrator import (
 # ---------------------------------------------------------------------------
 
 _VALID_PLUGIN_SRC = '''
-"""A test plug-in shaped like MicroFish / CricketBrain would be."""
+"""A test plug-in with the minimum SPEC.md-compliant shape."""
 
 AGENT_NAME = "{name}"
 AGENT_VERSION = "0.1.0"
@@ -87,30 +87,30 @@ def _write_plugin(tmp_path, filename: str, name: str, cls_name: str | None = Non
 # ---------------------------------------------------------------------------
 
 def test_load_plugins_from_path_registers_valid_agent(tmp_path):
-    _write_plugin(tmp_path, "microfish_agent.py", "microfish_agent", "MicroFishAgent")
+    _write_plugin(tmp_path, "example_one_agent.py", "example_one_agent", "ExampleOneAgent")
 
     orch = SwarmOrchestrator({"use_mock_data": True})
     summary = load_plugins(orch, paths=[tmp_path], entry_point_group=None)
 
-    assert summary.loaded == ["microfish_agent"]
+    assert summary.loaded == ["example_one_agent"]
     assert summary.skipped == []
     assert summary.errors == []
-    assert "microfish_agent" in orch.agents
+    assert "example_one_agent" in orch.agents
 
 
 def test_path_loaded_agent_can_be_run_via_orchestrator(tmp_path):
-    _write_plugin(tmp_path, "cricket_brain_agent.py", "cricket_brain_agent",
-                  "CricketBrainAgent")
+    _write_plugin(tmp_path, "example_two_agent.py", "example_two_agent",
+                  "ExampleTwoAgent")
 
     orch = SwarmOrchestrator({"use_mock_data": True})
     load_plugins(orch, paths=[tmp_path], entry_point_group=None)
 
     # The router doesn't know the new task type, so call the agent
     # directly — but verify it's wired into the orchestrator's registry.
-    agent = orch.agents["cricket_brain_agent"]
+    agent = orch.agents["example_two_agent"]
     out = agent.run({"type": "ping"})
     assert out["status"] == "complete"
-    assert out["agent"] == "cricket_brain_agent"
+    assert out["agent"] == "example_two_agent"
 
 
 def test_loaded_plugin_has_context_injected(tmp_path):
@@ -287,8 +287,8 @@ class _FakeEntryPoint:
 
 def test_entry_point_loads_agent_class(monkeypatch):
     """The loader resolves ``ep.load()`` to a class and registers it."""
-    class MicroFishAgent:
-        AGENT_NAME = "microfish_via_ep"
+    class ExampleViaEpAgent:
+        AGENT_NAME = "example_via_ep"
         AGENT_VERSION = "0.1.0"
 
         def __init__(self, config=None): self.config = config or {}
@@ -296,7 +296,7 @@ def test_entry_point_loads_agent_class(monkeypatch):
         def get_status(self): return {"state": "idle"}
         def validate_input(self, task): return True, ""
 
-    fake_ep = _FakeEntryPoint("microfish", "tao.agents", MicroFishAgent)
+    fake_ep = _FakeEntryPoint("example_via_ep", "tao.agents", ExampleViaEpAgent)
 
     def fake_entry_points(*, group=None):
         if group == "tao.agents":
@@ -307,8 +307,8 @@ def test_entry_point_loads_agent_class(monkeypatch):
 
     orch = SwarmOrchestrator({"use_mock_data": True})
     summary = load_plugins(orch, paths=[], entry_point_group="tao.agents")
-    assert "microfish_via_ep" in summary.loaded
-    assert "microfish_via_ep" in orch.agents
+    assert "example_via_ep" in summary.loaded
+    assert "example_via_ep" in orch.agents
 
 
 def test_entry_point_failed_load_recorded_as_error(monkeypatch):

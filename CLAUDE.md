@@ -92,12 +92,13 @@ npx hygen plugin new       # external plug-in scaffold (lives OUTSIDE this repo)
 
 ## Plug-ins (user-defined external agents)
 
-Users add their own agents (e.g. `MicroFish`, `CricketBrain`) via
+Users add their own agents via
 `src/orchestrator.load_plugins(orch, paths=[...], entry_point_group="tao.agents")`.
 Plug-ins must obey the SPEC.md agent contract (run / get_status /
 validate_input + AGENT_NAME / AGENT_VERSION) and are routed through
 the same `ApprovalGate` as built-ins — loading a plug-in does **not**
-raise its trust level. See `docs/plugins.md` for the full guide.
+raise its trust level. Full guide in `docs/plugins.md`; scaffold via
+`npx hygen plugin new`.
 
 Aliases: `npm run new:agent`, `npm run new:collector`, `npm run new:scoring`, `npm run new:test`, `npm run new:doc`.
 

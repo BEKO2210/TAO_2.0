@@ -1,9 +1,8 @@
 """
 Plug-in loader for the TAO/Bittensor Multi-Agent Swarm.
 
-User-defined agents (e.g. ``MicroFishAgent``, ``CricketBrainAgent``)
-can live OUTSIDE this repo and be loaded into the swarm at runtime
-via two mechanisms:
+User-defined agents can live OUTSIDE this repo and be loaded into
+the swarm at runtime via two mechanisms:
 
 1. **Path-based discovery** (zero-packaging — drop a ``*_agent.py``
    file in a folder, set ``TAO_PLUGIN_PATHS`` or pass ``paths=``).
@@ -32,7 +31,7 @@ Path-based, programmatic::
     orch = SwarmOrchestrator({"use_mock_data": True})
     summary = load_plugins(orch, paths=["/home/user/my-agents"])
     print(summary)
-    # → {"loaded": ["microfish_agent"], "skipped": [...], "errors": [...]}
+    # → {"loaded": ["<your_agent>"], "skipped": [...], "errors": [...]}
 
 Path-based, env var::
 
@@ -41,8 +40,7 @@ Path-based, env var::
 Entry-point-based (user's own ``pyproject.toml``)::
 
     [project.entry-points."tao.agents"]
-    microfish = "microfish.agent:MicroFishAgent"
-    cricket_brain = "cricket_brain.agent:CricketBrainAgent"
+    my_agent = "my_agents.my_agent:MyAgent"
 
 Then::
 

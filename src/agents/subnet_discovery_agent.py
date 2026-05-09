@@ -277,6 +277,7 @@ class SubnetDiscoveryAgent:
             rated_subnets.sort(key=lambda s: {"green": 0, "yellow": 1, "red": 2}.get(s["rating"], 3))
 
             result = {
+                "status": "complete",
                 "subnet_count": len(rated_subnets),
                 "subnets": rated_subnets,
                 "summary": self._generate_summary(rated_subnets),
@@ -301,7 +302,12 @@ class SubnetDiscoveryAgent:
         except Exception as e:
             self._status = "error"
             logger.exception("SubnetDiscoveryAgent: discovery failed: %s", e)
-            raise
+            return {
+                "status": "error",
+                "reason": str(e),
+                "agent_name": AGENT_NAME,
+                "task_type": task.get("type"),
+            }
 
     def get_status(self) -> dict:
         """
@@ -330,6 +336,8 @@ class SubnetDiscoveryAgent:
         """
         if not isinstance(task, dict):
             return False, "Task must be a dictionary"
+        if "type" not in task:
+            return False, "task.type is required"
         params = task.get("params", {})
         netuid = params.get("netuid")
         if netuid is not None and not isinstance(netuid, int):

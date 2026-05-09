@@ -236,6 +236,7 @@ class ProtocolResearchAgent:
             risks = self._get_risk_assessment(topic)
 
             result = {
+                "status": "complete",
                 "protocol_notes": notes,
                 "term_explanations": glossary,
                 "risks": risks,
@@ -254,7 +255,12 @@ class ProtocolResearchAgent:
         except Exception as e:
             self._status = "error"
             logger.exception("ProtocolResearchAgent: research failed: %s", e)
-            raise
+            return {
+                "status": "error",
+                "reason": str(e),
+                "agent_name": AGENT_NAME,
+                "task_type": task.get("type"),
+            }
 
     def get_status(self) -> dict:
         """
@@ -282,6 +288,8 @@ class ProtocolResearchAgent:
         """
         if not isinstance(task, dict):
             return False, "Task must be a dictionary"
+        if "type" not in task:
+            return False, "task.type is required"
         return True, ""
 
     def _get_protocol_notes(self, topic: str, query: str) -> dict:

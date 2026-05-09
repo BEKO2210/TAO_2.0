@@ -144,7 +144,7 @@ Der Orchestrator publiziert die Agent-Ausgabe nach jedem erfolgreichen Run unter
 
 ## Plug-ins (eigene Agenten)
 
-Du kannst eigene Agenten — wie `MicroFish`, `CricketBrain`, `<dein-name>` — **außerhalb dieses Repos** schreiben und zur Laufzeit einklinken.
+Du kannst eigene Agenten **außerhalb dieses Repos** schreiben und zur Laufzeit einklinken. Volle Anleitung: `docs/plugins.md`.
 
 ### Schnellster Weg: drop-in
 
@@ -154,8 +154,8 @@ cd ~/my-tao-plugins
 
 # Generiere ein Skelett (lebt OUTSIDE the swarm repo!)
 npx hygen plugin new
-# → ~/my-tao-plugins/micro_fish_agent.py
-#   ~/my-tao-plugins/test_micro_fish_agent.py
+# → ~/my-tao-plugins/<name>_agent.py
+#   ~/my-tao-plugins/test_<name>_agent.py
 #   ~/my-tao-plugins/README.md
 
 # Dem Swarm sagen, wo dein Plug-in liegt
@@ -170,7 +170,7 @@ from src.orchestrator import SwarmOrchestrator, load_plugins
 orch = SwarmOrchestrator({"use_mock_data": True})
 summary = load_plugins(orch, paths=["/home/user/my-tao-plugins"])
 print(summary.as_dict())
-# → {"loaded": ["micro_fish_agent"], "skipped": [], "errors": []}
+# → {"loaded": ["<your_agent>"], "skipped": [], "errors": []}
 ```
 
 ### Production-Weg: pip-installierbar
@@ -179,8 +179,7 @@ In deinem eigenen Repo (`pyproject.toml`):
 
 ```toml
 [project.entry-points."tao.agents"]
-micro_fish = "my_tao_plugins.micro_fish_agent:MicroFishAgent"
-cricket_brain = "my_tao_plugins.cricket_brain_agent:CricketBrainAgent"
+my_agent = "my_plugins.my_agent:MyAgent"
 ```
 
 ```bash

@@ -243,7 +243,15 @@ def test_validate_input_rejects_empty_task(agent_default):
     valid, msg = agent_default.validate_input({})
     assert valid is False
 
+    # Tasks without a `type` are unroutable; agent contract requires it.
     valid, msg = agent_default.validate_input({"action": "read"})
+    assert valid is False
+    assert "type" in msg
+
+    # With `type` present, the task is well-formed and accepted.
+    valid, msg = agent_default.validate_input({
+        "type": "wallet_watch", "action": "read",
+    })
     assert valid is True
 
 
