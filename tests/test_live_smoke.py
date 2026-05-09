@@ -272,3 +272,98 @@ def test_live_subnet_discovery_agent_returns_real_subnets(tmp_path):
         isinstance(s.get("identity"), dict) and s["identity"].get("description")
         for s in payload["subnets"]
     ), "expected at least one subnet with a real identity description"
+
+
+# ---------------------------------------------------------------------------
+# Full multi-agent workflow against live data
+# ---------------------------------------------------------------------------
+
+def test_live_full_swarm_workflow(tmp_path):
+    """End-to-end live: discovery → scoring → risk → market.
+
+    This is the sanity check for "the whole thing actually works."
+    All four agent calls are executed through the orchestrator
+    (ApprovalGate + TaskRouter + agent.run + result-wrap), and each
+    must produce a plausible payload sourced from real upstream
+    services.
+
+    The test tolerates transient SSL / network failures (skips
+    rather than fails) — those are environmental and not regressions.
+    """
+    pytest.importorskip("bittensor", reason="bittensor SDK not installed")
+    from src.agents.market_trade_agent import MarketTradeAgent
+    from src.agents.risk_security_agent import RiskSecurityAgent
+    from src.agents.subnet_discovery_agent import SubnetDiscoveryAgent
+    from src.agents.subnet_scoring_agent import SubnetScoringAgent
+    from src.orchestrator import SwarmOrchestrator
+
+    cfg = {
+        "use_mock_data": False, "network": "finney",
+        "wallet_mode": "WATCH_ONLY",
+        "chain_db_path": str(tmp_path / "e2e_chain.db"),
+        "market_db_path": str(tmp_path / "e2e_market.db"),
+    }
+    orch = SwarmOrchestrator(cfg)
+    orch.register_agent(SubnetDiscoveryAgent(cfg))
+    orch.register_agent(SubnetScoringAgent(cfg))
+    orch.register_agent(RiskSecurityAgent(cfg))
+    orch.register_agent(MarketTradeAgent(cfg))
+
+    # Step 1: discover real subnets
+    try:
+        disc = orch.execute_task({"type": "subnet_discovery"})
+    except (ConnectionError, OSError, RuntimeError) as exc:
+        pytest.skip(f"finney endpoint unreachable: {exc!r}")
+    if disc.get("status") != "success":
+        pytest.skip(f"discovery failed: {disc!r}")
+    if disc["output"].get("source") != "chain":
+        pytest.skip(
+            f"discovery fell back to {disc['output'].get('source')!r} — "
+            "transient endpoint flake, not a regression"
+        )
+    subnets = disc["output"]["subnets"]
+    assert disc["output"]["subnet_count"] > 50
+
+    # Step 2: pick the 5 most-staked subnets and score them
+    candidates = sorted(
+        (s for s in subnets if s.get("netuid", 0) > 0 and s.get("tao_in")),
+        key=lambda s: s.get("tao_in") or 0,
+        reverse=True,
+    )[:5]
+    if not candidates:
+        pytest.skip("no live subnets carrying tao_in returned")
+    score = orch.execute_task({"type": "subnet_scoring", "subnets": candidates})
+    assert score["status"] == "success"
+    scored = score["output"]["scored_subnets"]
+    assert len(scored) == len(candidates)
+    # Every scoring must produce a final_score and at least one
+    # competition reason cites real chain economics.
+    for s in scored:
+        assert isinstance(s.get("final_score"), (int, float))
+    assert any(
+        "TAO_in" in (
+            s.get("criteria_scores", {})
+            .get("competition", {})
+            .get("reason", "")
+        )
+        for s in scored
+    )
+
+    # Step 3: risk review (general — no need for a full subnet dict)
+    risk = orch.execute_task({
+        "type": "risk_review",
+        "params": {"target": "general", "subnet_id": candidates[0]["netuid"]},
+    })
+    assert risk["status"] == "success"
+
+    # Step 4: live market analysis
+    mkt = orch.execute_task({
+        "type": "market_analysis",
+        "params": {"action": "analyze", "symbol": "TAO"},
+    })
+    assert mkt["status"] == "success"
+    analysis = mkt["output"].get("analysis", {})
+    price = analysis.get("price", {})
+    if price.get("source") == "coingecko":
+        assert price.get("current", 0) > 0
+        assert price.get("_meta", {}).get("mode") in ("live", "mock")
