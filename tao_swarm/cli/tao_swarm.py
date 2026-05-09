@@ -1184,20 +1184,49 @@ def trade(ctx):
     """Run trading strategies — paper-default, live behind explicit gates."""
 
 
-_BUILTIN_STRATEGIES = ("momentum_rotation",)
+_BUILTIN_STRATEGIES = ("momentum_rotation", "mean_reversion")
 
 
-def _load_strategy(name: str, **kwargs):
-    """Load a built-in strategy by short name."""
-    from tao_swarm.trading.strategies.momentum_rotation import (
-        MomentumRotationStrategy,
-    )
+def _build_registry(plugin_paths: tuple[str, ...] | None = None):
+    """Build a StrategyRegistry with built-ins + optional plug-ins."""
+    from tao_swarm.trading import StrategyRegistry, load_strategy_plugins
 
-    if name == "momentum_rotation":
-        return MomentumRotationStrategy(**kwargs)
-    raise click.ClickException(
-        f"unknown strategy {name!r}; built-ins: {_BUILTIN_STRATEGIES}"
-    )
+    registry = StrategyRegistry()
+    registry.register_builtins()
+    if plugin_paths:
+        summary = load_strategy_plugins(registry, paths=plugin_paths)
+        for err in summary.errors:
+            click.echo(click.style(
+                f"  strategy plug-in error: {err}", fg="red",
+            ))
+        for skip in summary.skipped:
+            click.echo(click.style(
+                f"  strategy plug-in skipped: {skip}", fg="yellow",
+            ))
+        for name in summary.loaded:
+            click.echo(click.style(
+                f"  strategy plug-in loaded: {name}", fg="green",
+            ))
+    else:
+        # Even without explicit --plugin-paths, honour TAO_STRATEGY_PATHS.
+        load_strategy_plugins(registry)
+    return registry
+
+
+def _load_strategy(name: str, plugin_paths=None, **kwargs):
+    """Load a strategy by name from the registry (built-in or plug-in)."""
+    registry = _build_registry(plugin_paths=plugin_paths)
+    if name not in registry:
+        raise click.ClickException(
+            f"unknown strategy {name!r}; available: {registry.names()}"
+        )
+    cls = registry.get(name)
+    try:
+        return cls(**kwargs)
+    except TypeError as exc:
+        raise click.ClickException(
+            f"strategy {name!r} construction failed: {exc}"
+        )
 
 
 @trade.command("backtest")
