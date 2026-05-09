@@ -3,9 +3,19 @@
   <h1>TAO / Bittensor Multi-Agent Intelligence System</h1>
 </div>
 
-> Ein lokales, **read-only** Multi-Agentensystem zur Recherche, Analyse und Entscheidungsunterstützung im Bittensor (TAO)-Ökosystem. 15 spezialisierte Agenten arbeiten als Schwarm unter zentraler Governance — und du kannst eigene Agenten als **Plug-ins** hinzufügen.
+> Ein lokales, autonomes Multi-Agenten-System für Bittensor (TAO).
+> 15 spezialisierte Agenten arbeiten als Schwarm unter zentraler
+> Governance, mit vier opt-in Sicherheitsstufen vom reinen Read-only-
+> Recherchemodus bis hin zu single-user, gate-protected Auto-Trading.
+> Eigene Agenten als **Plug-ins** ergänzbar.
 
-> **WICHTIG:** Dieses System führt **KEINE automatischen Transaktionen** durch, speichert **KEINE Private Keys oder Seed Phrases**, und gibt **KEINE Finanzberatung**. Jede DANGER-Aktion (Trade, Stake, Sign) wird vor der Ausführung blockiert und nur als Plan ausgegeben.
+> **WICHTIG:** Default-Modus ist `NO_WALLET` (kein Wallet, keine
+> Trades, keine Signing-Capability). Auto-Trading ist ein **opt-in**
+> mit Kill-Switch, Position-Limit und Daily-Loss-Stop. Das System
+> speichert **KEINE Seed Phrases oder Coldkey-Private-Keys**. Hot-Keys
+> für Auto-Trading verwaltet der Operator. **KEINE Finanzberatung.**
+> Vor jeder Installation **bitte [DISCLAIMER.md](DISCLAIMER.md) und
+> [LICENSE](LICENSE) lesen.**
 >
 > **Lizenz & Nutzung:** Diese Software steht unter der [Business Source License 1.1](LICENSE) — **freie Nutzung nur für Non-Production**. Vor jeder Installation **bitte [DISCLAIMER.md](DISCLAIMER.md) und [LICENSE](LICENSE) lesen**. Production / kommerzielle Nutzung erfordert eine separate kommerzielle Lizenz.
 
@@ -48,12 +58,14 @@ gilt:
   - Teams bis 5 Personen
   - Read-only Recherche und Analyse, Mock-Mode für Entwicklung
   - Eigene Plug-ins entwickeln und testen
+  - **Persönliches Single-User Auto-Trading** mit eigenen Mitteln
+    (siehe Additional Use Grant (B) in [LICENSE](LICENSE))
 
 - **Nicht erlaubt** (braucht separate Lizenz vom Lizenzgeber):
   - Hosting als Service für Dritte (gegen Bezahlung oder anderweitig)
-  - Automatisierte Trading-, Staking- oder Signing-Entscheidungen
+  - Trading mit fremden Mitteln / Managed-Accounts
   - Einbettung in ein verkauftes / lizensiertes / gehostetes Produkt
-  - Production-Deployments jeder Art
+  - Multi-User- oder Production-Deployments jeder Art
 
 **Change Date: 2030-01-01.** An diesem Datum konvertiert die Software
 automatisch zur **Apache License 2.0** und wird vollständig Open Source.

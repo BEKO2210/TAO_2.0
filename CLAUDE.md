@@ -32,16 +32,42 @@ The canonical product spec is `SPEC.md`; the swarm constitution is `KIMI.md`. Re
 └── _templates/        Hygen scaffolding templates
 ```
 
-## Non-negotiable safety rules
+## Safety architecture
 
-These are enforced by `ApprovalGate` and **must not be relaxed**:
+The system supports four operating modes with strictly increasing
+authority. The defaults sit at the safest end and the higher-risk
+modes are explicit opt-ins, gate-protected, and limit-bounded.
 
-1. **NEVER** request, store, log, or transmit seed phrases.
-2. **NEVER** request, store, log, or transmit private keys.
-3. **NEVER** auto-execute trades, stake, unstake, or sign transactions.
-4. `DANGER`-classified actions output **plans / checklists only** — they do not execute.
-5. Default wallet mode is `NO_WALLET`. `WATCH_ONLY` accepts public addresses only.
-6. No cloud telemetry; everything runs locally.
+| Mode | Wallet | Signing | Sends value | Default? |
+|---|---|---|---|---|
+| `NO_WALLET` | none | no | no | yes |
+| `WATCH_ONLY` | public addr | no | no | no |
+| `MANUAL_SIGNING` | public addr | external | no | no |
+| `AUTO_TRADING` | hot key | yes (gated) | yes (gated) | no |
+
+### Always-on rules (these MUST NOT be relaxed)
+
+1. **NEVER** request, store, log, or transmit **seed phrases or
+   mnemonics** — full credentials never live in this system.
+2. **NEVER** request, store, log, or transmit **a coldkey private
+   key**. Auto-trading uses a hot key with a hard cap; the coldkey
+   stays out of this system entirely.
+3. `WATCH_ONLY` mode accepts public addresses only.
+4. No cloud telemetry; everything runs locally.
+
+### Auto-trading rules (apply only in `AUTO_TRADING` mode)
+
+5. The `ApprovalGate` continues to classify every action; in
+   `AUTO_TRADING` mode it routes `DANGER` actions to the audited
+   `auto_trader` execution path **only** when all of these are
+   satisfied: kill-switch off, hot-key configured, position-size
+   limit set, daily-loss-limit set, strategy explicitly opted in.
+6. Any one of {kill-switch on, daily-loss-limit hit, position-size
+   exceeded, hot-key missing, strategy not opted in} forces the
+   gate back to "plan only" output.
+7. The auto-trader's hot-key handling, signing path, and broadcast
+   path are isolated in their own module so the read-only swarm
+   stays read-only by construction.
 
 If a change could weaken any of these rules, stop and ask.
 
