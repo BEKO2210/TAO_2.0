@@ -59,6 +59,15 @@ from tao_swarm.trading.keystore import (
     SignerHandle,
     WrongPasswordError,
 )
+from tao_swarm.trading.learning import (
+    CalibrationBucket,
+    ConfidenceCalibrator,
+    EnsembleStrategy,
+    PerformanceTracker,
+    StrategyPerformance,
+    inverse_loss_weights,
+    uniform_weights,
+)
 from tao_swarm.trading.ledger import PaperLedger, TradeRecord
 from tao_swarm.trading.modes import WalletMode
 from tao_swarm.trading.reconcile import (
@@ -101,8 +110,11 @@ __all__ = [
     "BittensorChainPositionReader",
     "BittensorSigner",
     "BroadcastError",
+    "CalibrationBucket",
     "ChainPositionReader",
+    "ConfidenceCalibrator",
     "DailyLossLimit",
+    "EnsembleStrategy",
     "ExecResult",
     "Executor",
     "KillSwitch",
@@ -113,6 +125,7 @@ __all__ = [
     "LiveSignerError",
     "MarketStateBuilder",
     "PaperLedger",
+    "PerformanceTracker",
     "PositionCap",
     "ReconciledPosition",
     "RunnerStatus",
@@ -121,6 +134,7 @@ __all__ = [
     "Strategy",
     "StrategyLoadSummary",
     "StrategyMeta",
+    "StrategyPerformance",
     "StrategyRegistry",
     "SubmitReceipt",
     "TradeProposal",
@@ -130,5 +144,7 @@ __all__ = [
     "WrongPasswordError",
     "aggregate_by_netuid",
     "authorise_live_trade",
+    "inverse_loss_weights",
     "load_strategy_plugins",
+    "uniform_weights",
 ]
