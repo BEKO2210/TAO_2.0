@@ -345,7 +345,16 @@ evaluation logic, checks stake requirements, and performs code
     def _check_validator_hardware(self) -> dict:
         """Check if hardware is suitable for validation."""
         if not self._hardware_profile:
-            return {"ready": False, "issues": ["No hardware profile available"]}
+            self._hardware_profile = self._hardware_profile_from_context()
+        if not self._hardware_profile:
+            return {
+                "ready": False,
+                "issues": [
+                    "No hardware profile configured and no system_check_agent "
+                    "report in context. Run system_check first or pass "
+                    "hardware_profile in config."
+                ],
+            }
 
         issues: list[str] = []
         ram = self._hardware_profile.get("ram_gb", 0)
@@ -370,8 +379,16 @@ evaluation logic, checks stake requirements, and performs code
                 "has_gpu": has_gpu,
                 "vram_gb": vram,
                 "cpu_cores": cores,
+                "source": self._hardware_profile.get(
+                    "_source", "config:hardware_profile",
+                ),
             },
         }
+
+    def _hardware_profile_from_context(self) -> dict:
+        """Adapter shim — see ``src/agents/_hardware.py`` for details."""
+        from src.agents._hardware import hardware_profile_from_context
+        return hardware_profile_from_context(self)
 
     def _check_stake_sufficiency(self, netuid: int) -> dict:
         """Check if available stake is sufficient."""

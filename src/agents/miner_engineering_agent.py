@@ -464,32 +464,9 @@ class MinerEngineeringAgent:
         return framework_map.get(category, {"primary": "Unknown", "secondary": "Bittensor", "libs": ["bittensor"]})
 
     def _hardware_profile_from_context(self) -> dict:
-        """
-        Pull a hardware profile from the shared agent context.
-
-        Looks up the most recent ``system_check_agent.hardware_report`` and
-        adapts it to the field names this agent expects (``ram_gb``,
-        ``has_gpu``, ``vram_gb``, ``cpu_cores``). Returns ``{}`` when
-        context isn't available or no report has been published — the
-        caller falls back to its existing ``status="unknown"`` path.
-        """
-        ctx = getattr(self, "context", None)
-        if ctx is None or not hasattr(ctx, "get"):
-            return {}
-        report = ctx.get("system_check_agent.hardware_report")
-        if not isinstance(report, dict):
-            return {}
-
-        ram = report.get("ram") or {}
-        gpu = report.get("gpu") or {}
-        cpu = report.get("cpu") or {}
-        return {
-            "ram_gb": ram.get("total_gb", 0),
-            "has_gpu": bool(gpu.get("available", False)),
-            "vram_gb": gpu.get("vram_gb", 0),
-            "cpu_cores": cpu.get("cores", 0),
-            "_source": "system_check_agent.hardware_report",
-        }
+        """Adapter shim — see ``src/agents/_hardware.py`` for details."""
+        from src.agents._hardware import hardware_profile_from_context
+        return hardware_profile_from_context(self)
 
     def _check_hardware_compatibility(self, hw_min: dict) -> dict:
         """Check if available hardware meets minimum requirements."""
