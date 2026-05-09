@@ -16,7 +16,7 @@ import os
 import re
 import sqlite3
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -24,11 +24,21 @@ from src.collectors._base import BaseCollector
 
 logger = logging.getLogger(__name__)
 
-# Subscan API public endpoints (no key needed for basic queries)
-SUBSCAN_API_BASE = "https://bittensor.api.subscan.io/api/v2"
+# Subscan API public endpoints (no key needed for basic queries —
+# free tier has rate limits, an API key removes them).
+# Docs: https://support.subscan.io/#api-references
+SUBSCAN_API_BASE = "https://bittensor.api.subscan.io/api"
+
+# Subscan returns balances as integer plancks (10^9 = 1 TAO).
+# https://docs.bittensor.com/getting-started/Bittensor%20decimals
+_PLANCK_PER_TAO = 10 ** 9
 
 # SS58 prefix for Bittensor
 SS58_PREFIX = 42
+
+# Default Subscan request timeout. Subscan's public node can be slow
+# under load; 15s is a reasonable upper bound for a single read.
+_SUBSCAN_TIMEOUT_S = 15.0
 
 
 class WalletWatchOnlyCollector(BaseCollector):
@@ -60,13 +70,31 @@ class WalletWatchOnlyCollector(BaseCollector):
         super().__init__(config)
         self.config = config
         self.db_path = config.get("db_path", "data/wallet_watch.db")
-        self.api_key = config.get("subscan_api_key", "")
+        # Subscan API key. Order: explicit config → SUBSCAN_API_KEY env
+        # → empty string. The public endpoints work without a key but
+        # are rate-limited; supplying one (free signup at subscan.io)
+        # removes the per-IP quota.
+        self.api_key = config.get(
+            "subscan_api_key",
+            os.environ.get("SUBSCAN_API_KEY", ""),
+        )
+        # Allow the test suite (and operators with a private node) to
+        # override the Subscan base URL. Default points at the public
+        # endpoint — opt-in only via use_mock_data=False.
+        self.subscan_base = config.get("subscan_api_base", SUBSCAN_API_BASE)
+        # HTTP timeout for live Subscan calls. Inherited from BaseCollector
+        # via config["timeout"] but kept as a separate field so the live
+        # path doesn't accidentally pick up a sub-second test value.
+        self._subscan_timeout_s: float = float(
+            config.get("subscan_timeout_s", _SUBSCAN_TIMEOUT_S),
+        )
 
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
         logger.info(
-            "WalletWatchOnlyCollector initialized (watch-only, use_mock_data=%s)",
-            self.use_mock_data,
+            "WalletWatchOnlyCollector initialized (watch-only, use_mock_data=%s, "
+            "subscan_key_set=%s)",
+            self.use_mock_data, bool(self.api_key),
         )
 
     # ── Database ──────────────────────────────────────────────────────────
@@ -245,25 +273,51 @@ class WalletWatchOnlyCollector(BaseCollector):
         """
         Get the balance for a watched address.
 
+        In live mode (``use_mock_data=False``), POSTs to Subscan's
+        ``/api/scan/account`` endpoint with the SS58 key and parses the
+        balance fields from the JSON response. The free / reserved
+        values come back as integer plancks; we convert to TAO via
+        ``_PLANCK_PER_TAO``. Falls back to the deterministic mock
+        branch if the network call fails or live mode wasn't asked for.
+
         Args:
             address: SS58 address to query.
 
         Returns:
-            Dictionary with free, reserved, and total balance in TAO.
+            Dictionary with free, reserved, and total balance in TAO,
+            plus a ``_meta`` block tagging mock vs live and (on
+            fall-back) the reason.
         """
         cached = self._cache_get("balance_cache", "address", address)
         if cached:
             return cached
 
-        # Note: this collector currently has no live Subscan integration —
-        # all balances are deterministic mocks derived from the address.
-        # The _resolve_mode call still records use_mock_data so consumers
-        # can audit data provenance via the _meta block. A live Subscan
-        # path is a follow-up.
-        mode = self._resolve_mode(
-            live_available=False,
-            reason_when_unavailable="Subscan integration not yet implemented",
-        )
+        mode = self._resolve_mode(live_available=True)
+
+        if mode == "live":
+            try:
+                live = self._subscan_account(address)
+                if live is not None:
+                    live["_meta"] = self._meta(mode)
+                    self._cache_set("balance_cache", "address", address, live)
+                    return live
+                # Subscan responded but returned no usable data
+                # (HTTP non-200, code != 0, or empty body). The
+                # upstream call ran — we just don't trust the
+                # answer. Demote mode to "mock" so the cached fixture
+                # is tagged honestly.
+                mode = "mock"
+            except Exception as exc:
+                logger.warning(
+                    "Subscan balance lookup for %s failed: %s — "
+                    "falling back to mock", address[:10], exc,
+                )
+                # Re-resolve mode so the meta block carries a
+                # fallback_reason that names the upstream failure.
+                self._mock_fallback_reason = (
+                    f"Subscan request failed: {type(exc).__name__}"
+                )
+                mode = "mock"
 
         # Fallback: generate deterministic mock data
         h = hashlib.sha256(f"balance:{address}".encode()).hexdigest()
@@ -282,6 +336,147 @@ class WalletWatchOnlyCollector(BaseCollector):
         }
         self._cache_set("balance_cache", "address", address, result)
         return result
+
+    # ── Subscan client ────────────────────────────────────────────────────
+
+    def _subscan_post(self, path: str, payload: dict) -> dict | None:
+        """
+        POST a JSON payload to the Subscan API.
+
+        Returns the parsed ``data`` field on HTTP 200 + ``code == 0``
+        (Subscan's success indicator). Returns ``None`` for any other
+        outcome — caller treats that as "no live data" and falls back
+        to mock. Network exceptions propagate so the caller can record
+        the error in ``_mock_fallback_reason``.
+        """
+        url = f"{self.subscan_base}/{path.lstrip('/')}"
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        resp = requests.post(
+            url, json=payload, headers=headers,
+            timeout=self._subscan_timeout_s,
+        )
+        if resp.status_code != 200:
+            logger.debug(
+                "Subscan %s returned HTTP %s", path, resp.status_code,
+            )
+            return None
+        try:
+            body = resp.json()
+        except ValueError:
+            logger.debug("Subscan %s returned non-JSON body", path)
+            return None
+        # Subscan's API wraps successful responses as
+        # {"code": 0, "data": {...}, "message": "Success"}.
+        if body.get("code") != 0:
+            logger.debug(
+                "Subscan %s returned error code %s (%s)",
+                path, body.get("code"), body.get("message"),
+            )
+            return None
+        return body.get("data") or {}
+
+    def _subscan_account(self, address: str) -> dict | None:
+        """
+        Fetch balance fields for ``address`` from
+        ``/api/v2/scan/search`` (Subscan's account-detail endpoint).
+
+        Returns a normalised balance dict ready for ``balance_cache``,
+        or ``None`` if the address isn't found / Subscan returned an
+        error response. Network errors propagate.
+        """
+        # Subscan v2 search returns the full account object. ``key`` can
+        # be SS58 or a public hex key; we always send SS58.
+        data = self._subscan_post("v2/scan/search", {"key": address})
+        if not data:
+            return None
+        # The interesting fields live under ``data['account']`` for v2.
+        account = data.get("account") or data
+        free = self._planck_to_tao(account.get("balance", "0"))
+        reserved = self._planck_to_tao(account.get("reserved", "0"))
+        # Some v2 responses use ``balance_lock`` / ``frozen_balance``
+        # for locked-but-not-reserved funds.
+        frozen = self._planck_to_tao(
+            account.get("balance_lock", account.get("frozen_balance", "0"))
+        )
+        misc_frozen = self._planck_to_tao(account.get("misc_frozen_balance", "0"))
+        return {
+            "address": address,
+            "free": free,
+            "reserved": reserved,
+            "total": round(free + reserved, 6),
+            "frozen": frozen,
+            "misc_frozen": misc_frozen,
+            "timestamp": int(time.time()),
+        }
+
+    @staticmethod
+    def _planck_to_tao(value: Any) -> float:
+        """Convert a Subscan-returned planck value (string or int) to
+        TAO. Returns 0.0 for unparseable input rather than raising —
+        partial responses shouldn't kill the whole balance fetch."""
+        if value in (None, ""):
+            return 0.0
+        try:
+            # Subscan returns these as decimal strings on v2.
+            return round(float(value) / _PLANCK_PER_TAO, 6)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _subscan_staking(self, address: str) -> dict | None:
+        """
+        Fetch staking / delegation rows for ``address`` from Subscan.
+
+        Returns a normalised staking dict ready for ``staking_cache``,
+        or ``None`` if the address has no staking history. Network
+        errors propagate (caller logs + falls back to mock).
+        """
+        # Subscan endpoint: /api/scan/staking/list returns the user's
+        # active delegations. Schema:
+        #   {"data": {"list": [{"validator_id": SS58, "amount": planck,
+        #                       "share_pct": float, "apy": float, ...}],
+        #             "total": planck_total}}
+        data = self._subscan_post(
+            "scan/staking/list",
+            {"address": address, "row": 100, "page": 0},
+        )
+        if not data:
+            return None
+        rows = data.get("list") or []
+        delegations: list[dict] = []
+        total_staked = 0.0
+        for row in rows:
+            amount_tao = self._planck_to_tao(row.get("amount", 0))
+            total_staked += amount_tao
+            delegations.append({
+                "validator": row.get("validator_id") or row.get("stash") or "",
+                "amount": amount_tao,
+                "share_pct": float(row.get("share_pct", 0.0) or 0.0),
+                "apy_estimate": float(row.get("apy", 0.0) or 0.0),
+            })
+        # Subscan's overall total may differ slightly from sum-of-rows
+        # due to pending unstakes — prefer the explicit field if set.
+        total_field = self._planck_to_tao(data.get("total", 0))
+        if total_field > 0:
+            total_staked = total_field
+        # Free-form delegated balance (held outside active validator
+        # set) — surfaced if Subscan provides it; otherwise 0.
+        delegated = self._planck_to_tao(data.get("nominator_balance", 0))
+        avg_apy = (
+            sum(d["apy_estimate"] for d in delegations) / len(delegations)
+            if delegations else 0.0
+        )
+        return {
+            "address": address,
+            "total_staked": round(total_staked, 6),
+            "total_delegated": round(delegated, 6),
+            "total": round(total_staked + delegated, 6),
+            "num_delegations": len(delegations),
+            "delegations": delegations,
+            "estimated_apy_pct": round(avg_apy, 2),
+            "timestamp": int(time.time()),
+        }
 
     # ── Transactions ──────────────────────────────────────────────────────
 
@@ -341,20 +536,43 @@ class WalletWatchOnlyCollector(BaseCollector):
         """
         Get staking information for an address.
 
+        In live mode, queries Subscan's
+        ``/api/scan/staking/account_staking_history`` endpoint for the
+        active delegation list and rolls it up. Falls back to
+        deterministic mock if the call fails or live wasn't requested.
+
         Args:
             address: SS58 address to query.
 
         Returns:
-            Dictionary with staked amount, delegations, and APY estimates.
+            Dictionary with staked amount, delegations, and APY estimates,
+            plus a ``_meta`` block tagging mock vs live.
         """
         cached = self._cache_get("staking_cache", "address", address)
         if cached:
             return cached
 
-        mode = self._resolve_mode(
-            live_available=False,
-            reason_when_unavailable="Subscan integration not yet implemented",
-        )
+        mode = self._resolve_mode(live_available=True)
+
+        if mode == "live":
+            try:
+                live = self._subscan_staking(address)
+                if live is not None:
+                    live["_meta"] = self._meta(mode)
+                    self._cache_set("staking_cache", "address", address, live)
+                    return live
+                # Subscan responded but with no usable staking data —
+                # demote mode so the meta tags honestly.
+                mode = "mock"
+            except Exception as exc:
+                logger.warning(
+                    "Subscan staking lookup for %s failed: %s — "
+                    "falling back to mock", address[:10], exc,
+                )
+                self._mock_fallback_reason = (
+                    f"Subscan request failed: {type(exc).__name__}"
+                )
+                mode = "mock"
 
         h = hashlib.sha256(f"staking:{address}".encode()).hexdigest()
         staked = round(float(int(h[:16], 16)) / 1e12, 6)

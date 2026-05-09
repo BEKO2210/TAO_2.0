@@ -96,15 +96,24 @@ def test_wallet_staking_mock_carries_meta(tmp_path):
     assert info["total_staked"] >= 0
 
 
-def test_wallet_live_mode_records_fallback_reason(tmp_path):
-    """When use_mock_data=False, the collector must signal that no live
-    Subscan path exists yet — consumers see fallback_reason and know
-    the data is still mock."""
+def test_wallet_live_mode_records_fallback_reason(tmp_path, monkeypatch):
+    """When use_mock_data=False but the live Subscan call fails (no
+    network in the test environment), the collector must record a
+    fallback_reason naming the upstream failure, and still return
+    deterministic mock values rather than crashing."""
+    import requests as _requests
+
+    def _boom(*args, **kwargs):
+        raise _requests.exceptions.ConnectionError("simulated no network")
+
+    monkeypatch.setattr(_requests, "post", _boom)
+
     db = tmp_path / "ww.db"
     c = WalletWatchOnlyCollector({"db_path": str(db), "use_mock_data": False})
     bal = c.get_balance(ADDR)
     assert bal["_meta"]["mode"] == "mock"
     assert "Subscan" in bal["_meta"]["fallback_reason"]
+    assert "ConnectionError" in bal["_meta"]["fallback_reason"]
 
 
 def test_wallet_balance_is_deterministic_for_same_address(tmp_path):
