@@ -19,7 +19,13 @@ aiofiles>=23.0.0
 
 # --- DATENVERARBEITUNG ---
 pandas>=2.1.0,<3.0.0
-numpy>=1.26.0,<2.0.0
+# numpy 2.x is required by bittensor>=10 (the SDK pins
+# numpy>=2.0.1,<3). pandas 2.1+ supports both numpy 1.26 and 2.x,
+# so we leave the lower bound at 1.26 but lift the upper bound to
+# 3.0 — otherwise ``pip install -r requirements.txt`` cannot resolve
+# alongside a modern bittensor SDK and live mode silently can't
+# install.
+numpy>=1.26.0,<3.0.0
 
 # --- KONFIGURATION & VALIDIERUNG ---
 pydantic>=2.5.0,<3.0.0
