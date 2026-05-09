@@ -262,6 +262,91 @@ def outcome_distribution(trades) -> OutcomeDistribution:
 # Halt-runner control (kill-switch convenience)
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class StrategySnapshot:
+    """One row in the dashboard's per-strategy KPI table.
+
+    Mirrors :class:`tao_swarm.trading.PerformanceTracker.StrategyPerformance`
+    plus the current ensemble weight (when the operator wired one
+    up) so the dashboard can show "this strategy makes up 62% of
+    the ensemble right now".
+    """
+
+    strategy: str
+    realised_pnl_tao: float
+    win_rate: float
+    sharpe: float
+    num_realised_closes: int
+    num_attempts: int
+    last_trade_ts: float | None
+    insufficient_data: bool
+    ensemble_weight: float | None  # None = not part of any ensemble
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "strategy": self.strategy,
+            "realised_pnl_tao": self.realised_pnl_tao,
+            "win_rate": self.win_rate,
+            "sharpe": self.sharpe,
+            "num_realised_closes": self.num_realised_closes,
+            "num_attempts": self.num_attempts,
+            "last_trade_ts": self.last_trade_ts,
+            "insufficient_data": self.insufficient_data,
+            "ensemble_weight": self.ensemble_weight,
+        }
+
+
+def per_strategy_snapshot(
+    tracker: Any,
+    strategies: list[str] | None = None,
+    *,
+    window_days: float = 14.0,
+    weights: dict[str, float] | None = None,
+) -> list[StrategySnapshot]:
+    """Build a sorted list of :class:`StrategySnapshot` rows for the
+    dashboard's "Per-strategy performance" table.
+
+    Sorted by realised P&L descending so the best performer is on
+    top. Strategies not present in ``weights`` get ``ensemble_weight=None``.
+    """
+    stats = tracker.all_stats(strategies=strategies, window_days=window_days)
+    weights = weights or {}
+    rows: list[StrategySnapshot] = []
+    for name, perf in stats.items():
+        rows.append(StrategySnapshot(
+            strategy=name,
+            realised_pnl_tao=perf.realised_pnl_tao,
+            win_rate=perf.win_rate,
+            sharpe=perf.sharpe,
+            num_realised_closes=perf.num_realised_closes,
+            num_attempts=perf.num_attempts,
+            last_trade_ts=perf.last_trade_ts,
+            insufficient_data=perf.insufficient_data,
+            ensemble_weight=weights.get(name),
+        ))
+    rows.sort(
+        key=lambda r: (r.insufficient_data, -r.realised_pnl_tao),
+    )
+    return rows
+
+
+def per_strategy_equity_curves(
+    ledger: Any,
+    strategies: list[str],
+    *,
+    limit_per_strategy: int = 1000,
+) -> dict[str, list[Any]]:
+    """For each strategy, return its equity-curve as a list of
+    :class:`EquityPoint` objects. Convenient input for an overlay
+    line chart in the dashboard.
+    """
+    out: dict[str, list[Any]] = {}
+    for name in strategies:
+        rows = list(ledger.list_trades(strategy=name, limit=limit_per_strategy))
+        out[name] = equity_curve(rows)
+    return out
+
+
 def halt_runner_via_killswitch(path: str | Path, reason: str = "dashboard halt") -> None:
     """Touch (or rewrite) the kill-switch file the runner watches.
 

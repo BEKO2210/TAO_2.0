@@ -47,6 +47,41 @@ tao-swarm trade learning-report \
 tao-swarm trade learning-report --json
 ```
 
+### Run an adaptive ensemble (PR 2N — recommended path)
+
+```bash
+# Ensemble of every registered strategy, inverse-loss weighted:
+tao-swarm trade run --strategy ensemble:all \
+    --status-file data/runner_status.json
+
+# Specific subset:
+tao-swarm trade run \
+    --strategy ensemble:momentum_rotation,mean_reversion \
+    --ensemble-weight-fn inverse_loss \
+    --status-file data/runner_status.json
+
+# Uniform weighting (no learning, equal weight every base):
+tao-swarm trade run --strategy ensemble:all \
+    --ensemble-weight-fn uniform
+```
+
+`ensemble:all` is shorthand for "every strategy currently in the
+registry — built-ins + plug-ins discovered via
+`TAO_STRATEGY_PATHS`". `ensemble:A,B` lets the operator pick a
+subset by name.
+
+The runner now adapts on its own:
+
+1. Each tick the EnsembleStrategy reads recent realised P&L from
+   the audit ledger (via `PerformanceTracker`).
+2. Computes per-base weights with the chosen weight function.
+3. Calls each base's `evaluate()`, scales the proposed amounts by
+   weight.
+4. The Executor runs its existing four-guard chain on the result.
+
+Winners get more capital, losers get throttled (but never to
+zero — there's always a floor for regime change).
+
 Output (illustrative):
 
 ```

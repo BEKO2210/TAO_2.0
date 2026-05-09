@@ -1185,6 +1185,7 @@ def trade(ctx):
 
 
 _BUILTIN_STRATEGIES = ("momentum_rotation", "mean_reversion")
+_ENSEMBLE_WEIGHT_FUNCTIONS = ("uniform", "inverse_loss")
 
 
 def _build_registry(plugin_paths: tuple[str, ...] | None = None):
@@ -1213,9 +1214,95 @@ def _build_registry(plugin_paths: tuple[str, ...] | None = None):
     return registry
 
 
-def _load_strategy(name: str, plugin_paths=None, **kwargs):
-    """Load a strategy by name from the registry (built-in or plug-in)."""
+def _resolve_ensemble_bases(spec: str, registry) -> list[str]:
+    """Parse the part after ``ensemble:`` into a list of base names.
+
+    Supported forms:
+    - ``ensemble:all`` → every strategy currently in the registry.
+    - ``ensemble:A,B,C`` → the comma-separated subset (whitespace-
+      tolerant). Unknown names raise.
+    """
+    body = spec.strip()
+    if body == "all":
+        return list(registry.names())
+    bases = [n.strip() for n in body.split(",") if n.strip()]
+    if not bases:
+        raise click.ClickException(
+            f"ensemble spec {spec!r} resolved to no strategies"
+        )
+    unknown = [n for n in bases if n not in registry]
+    if unknown:
+        raise click.ClickException(
+            f"ensemble references unknown strategies: {unknown}; "
+            f"available: {registry.names()}"
+        )
+    return bases
+
+
+def _build_weight_fn(name: str):
+    """Map a CLI weight-function name to the callable."""
+    from tao_swarm.trading import inverse_loss_weights, uniform_weights
+
+    if name == "uniform":
+        return uniform_weights
+    if name == "inverse_loss":
+        return inverse_loss_weights
+    raise click.ClickException(
+        f"unknown ensemble weight function {name!r}; "
+        f"choose from {_ENSEMBLE_WEIGHT_FUNCTIONS}"
+    )
+
+
+def _load_strategy(
+    name: str,
+    plugin_paths=None,
+    *,
+    ledger_db: Path | None = None,
+    weight_fn_name: str = "inverse_loss",
+    **kwargs,
+):
+    """Load a strategy by name from the registry.
+
+    Special syntax: ``ensemble:all`` or ``ensemble:A,B,C`` builds an
+    :class:`EnsembleStrategy` over the named bases with a
+    :class:`PerformanceTracker` reading from ``ledger_db`` (defaults
+    to ``data/trades.db``). Each base is constructed with the
+    operator's ``**kwargs`` (threshold_pct, slot_size_tao, etc.) so
+    one set of parameters applies to every base in the ensemble.
+    Operators who want per-base parameters should construct the
+    ensemble programmatically.
+    """
     registry = _build_registry(plugin_paths=plugin_paths)
+
+    if name.startswith("ensemble:") or name == "ensemble":
+        # Lazy imports keep paper-only callers off the learning code path.
+        from tao_swarm.trading import (
+            EnsembleStrategy,
+            PaperLedger,
+            PerformanceTracker,
+        )
+
+        spec = name.split(":", 1)[1] if ":" in name else "all"
+        bases_names = _resolve_ensemble_bases(spec, registry)
+        bases: dict = {}
+        for base_name in bases_names:
+            cls = registry.get(base_name)
+            try:
+                bases[base_name] = cls(**kwargs)
+            except TypeError as exc:
+                raise click.ClickException(
+                    f"strategy {base_name!r} construction failed: {exc}"
+                )
+        ledger_path = Path(ledger_db) if ledger_db else Path("data") / "trades.db"
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        ledger = PaperLedger(str(ledger_path))
+        tracker = PerformanceTracker(ledger)
+        weight_fn = _build_weight_fn(weight_fn_name)
+        return EnsembleStrategy(
+            bases=bases, weight_fn=weight_fn, tracker=tracker,
+            name="ensemble",
+        )
+
     if name not in registry:
         raise click.ClickException(
             f"unknown strategy {name!r}; available: {registry.names()}"
@@ -1330,8 +1417,24 @@ def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
 @trade.command("run")
 @click.option(
     "--strategy", "strategy_name",
-    type=click.Choice(list(_BUILTIN_STRATEGIES)),
+    type=str,
     required=True,
+    help=(
+        "Strategy name. Built-ins: momentum_rotation, mean_reversion. "
+        "Ensemble forms: 'ensemble:all' or 'ensemble:A,B' build an "
+        "adaptive ensemble that re-weights based on recent realised P&L."
+    ),
+)
+@click.option(
+    "--ensemble-weight-fn",
+    type=click.Choice(list(_ENSEMBLE_WEIGHT_FUNCTIONS)),
+    default="inverse_loss",
+    show_default=True,
+    help=(
+        "Weight function for ensemble:* strategies. 'inverse_loss' "
+        "favours recent winners with a non-zero floor for losers; "
+        "'uniform' weights bases equally."
+    ),
 )
 @click.option(
     "--paper/--live", "paper", default=True,
@@ -1430,7 +1533,7 @@ def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
 )
 @click.pass_context
 def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
-    ctx, strategy_name, paper, keystore_path,
+    ctx, strategy_name, ensemble_weight_fn, paper, keystore_path,
     threshold_pct, slot_size_tao, max_position_tao, max_daily_loss_tao,
     max_total_tao, tick_interval_s, max_ticks, ledger_db, kill_switch_path,
     watchlist, reconcile_coldkey, verify_broadcasts, status_file,
@@ -1465,6 +1568,8 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
             raise click.ClickException("watchlist must be comma-separated integers")
     strat = _load_strategy(
         strategy_name,
+        ledger_db=ledger_db,
+        weight_fn_name=ensemble_weight_fn,
         threshold_pct=threshold_pct,
         slot_size_tao=slot_size_tao,
         max_position_tao=max_position_tao,
