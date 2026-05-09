@@ -288,7 +288,46 @@ Outcomes:
 The verification step adds one extra RPC round-trip per live
 trade, so the operator can opt out for low-latency strategies.
 
-## 12. What the runner does NOT do
+## 12. Dashboard panel (PR 2I)
+
+The Streamlit dashboard's **Trading** page shows the current
+runner state plus an aggregated view of the trade ledger. To wire
+it up, run the trader with `--status-file`:
+
+```bash
+tao-swarm trade run \
+    --strategy momentum_rotation \
+    --status-file data/runner_status.json \
+    ...
+```
+
+After every tick the runner writes its status (state, ticks,
+executed/refused counters, open positions, last reconcile, halted
+reason) atomically to that path. Open the dashboard
+(`tao-swarm dashboard`) → **Trading** to see:
+
+- A 4-column KPI block: state badge, strategy name, mode (PAPER /
+  LIVE), last tick time.
+- Counters row: ticks / executed / refused / errors.
+- Halt / error banners if the runner has tripped.
+- Open positions table (per-netuid size + entry).
+- Cold-start reconcile timestamp + reconciled total TAO.
+- Ledger summary: total / paper / live / failed counts, realised
+  P&L, distinct strategies present.
+- Recent trades table (last 200) with truncated tx_hash for
+  readability.
+
+The dashboard is read-only — it never writes to the ledger or
+sends signals to the runner. To stop the runner use Ctrl-C, the
+kill-switch file, or `runner.stop()` programmatically.
+
+Override the discovery paths via env vars:
+
+- `TAO_RUNNER_STATUS_FILE` — overrides
+  `data/runner_status.json`.
+- `TAO_LEDGER_DB` — overrides `data/trades.db`.
+
+## 13. What the runner does NOT do
 
 - **Reconcile mid-flight.** Reconciliation is one-shot at startup.
   If your dedicated trading key gets used by another tool while
@@ -302,7 +341,7 @@ trade, so the operator can opt out for low-latency strategies.
   ledgers if you want a basket; cap budgets are not shared
   automatically.
 
-## 13. Where to look in the source
+## 14. Where to look in the source
 
 | Concern | File |
 |---|---|
@@ -317,6 +356,7 @@ trade, so the operator can opt out for low-latency strategies.
 | Live signer | [`tao_swarm/trading/signer.py`](../tao_swarm/trading/signer.py) |
 | Runner loop | [`tao_swarm/trading/runner.py`](../tao_swarm/trading/runner.py) |
 | Cold-start reconciliation | [`tao_swarm/trading/reconcile.py`](../tao_swarm/trading/reconcile.py) |
+| Dashboard panel | [`tao_swarm/dashboard/trading_view.py`](../tao_swarm/dashboard/trading_view.py) |
 | CLI | [`tao_swarm/cli/tao_swarm.py`](../tao_swarm/cli/tao_swarm.py) |
 
 If you change any of these, run the full test suite — every layer

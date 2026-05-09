@@ -184,7 +184,7 @@ SIDEBAR_PAGES = [
     "Wallet Watch",
     "Market Watch",
     "Risk Alerts",
-    "Paper Trades",
+    "Trading",
     "Run Logs",
 ]
 
@@ -536,43 +536,143 @@ def render_risk_alerts():
     st.info("Risk data is updated via the scoring pipeline. Run `tao-swarm risk` to refresh.")
 
 
-def render_paper_trades():
-    """Render the Paper Trades page."""
-    st.header("Paper Trades")
+def render_trading():
+    """Render the Trading page — runner status + ledger summary."""
+    from datetime import datetime, timezone
 
-    col1, col2, col3 = st.columns(3)
+    from tao_swarm.dashboard.trading_view import (
+        load_runner_status,
+        runner_health_label,
+        summarise_ledger,
+        trades_to_table_rows,
+    )
+    from tao_swarm.trading import PaperLedger
+
+    st.header("Trading")
+    st.caption(
+        "Live + paper trading status. Paper trades default; live "
+        "execution requires explicit env, keystore, and per-strategy "
+        "opt-in (see docs/auto_trading.md)."
+    )
+
+    # ---- Runner status panel ---------------------------------------------
+    data_dir = Path(os.environ.get("TAO_DATA_DIR", "data"))
+    status_path = Path(os.environ.get(
+        "TAO_RUNNER_STATUS_FILE", data_dir / "runner_status.json",
+    ))
+    status = load_runner_status(status_path)
+    label, _ = runner_health_label(status)
+
+    st.subheader("Runner")
+    if status:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("State", label.upper())
+        with col2:
+            st.metric("Strategy", str(status.get("strategy", "—")))
+        with col3:
+            mode = "LIVE" if not status.get("paper", True) else "PAPER"
+            st.metric("Mode", mode)
+        with col4:
+            ts = status.get("last_tick_ts")
+            if ts:
+                tick_str = datetime.fromtimestamp(
+                    float(ts), tz=timezone.utc,
+                ).strftime("%H:%M:%S")
+            else:
+                tick_str = "never"
+            st.metric("Last tick", tick_str)
+
+        cola, colb, colc, cold = st.columns(4)
+        with cola:
+            st.metric("Ticks", int(status.get("ticks", 0)))
+        with colb:
+            st.metric("Executed", int(status.get("executed", 0)))
+        with colc:
+            st.metric("Refused", int(status.get("refused", 0)))
+        with cold:
+            st.metric("Errors", int(status.get("errors", 0)))
+
+        if status.get("halted_reason"):
+            st.error(f"HALTED: {status['halted_reason']}")
+        elif status.get("last_error"):
+            st.warning(f"Last error: {status['last_error']}")
+
+        positions = status.get("open_positions") or {}
+        if positions:
+            st.markdown("**Open positions**")
+            rows = [
+                {
+                    "netuid": int(uid),
+                    "size_tao": float(p.get("size", 0.0)),
+                    "entry_tao": float(p.get("entry", 0.0)),
+                }
+                for uid, p in positions.items()
+            ]
+            st.dataframe(
+                pd.DataFrame(rows), use_container_width=True, hide_index=True,
+            )
+        else:
+            st.caption("No open positions.")
+
+        rec_ts = status.get("last_reconcile_ts")
+        if rec_ts:
+            rec_str = datetime.fromtimestamp(
+                float(rec_ts), tz=timezone.utc,
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            st.caption(
+                f"Last cold-start reconcile: {rec_str} UTC · "
+                f"reconciled total = "
+                f"{status.get('reconciled_total_tao') or 0.0:.4f} TAO"
+            )
+    else:
+        st.info(
+            f"No runner status file at `{status_path}`. Start a runner with "
+            "`tao-swarm trade run --status-file <path>` to populate this."
+        )
+
+    st.divider()
+
+    # ---- Ledger summary ---------------------------------------------------
+    st.subheader("Trade ledger")
+    ledger_path = Path(os.environ.get(
+        "TAO_LEDGER_DB", data_dir / "trades.db",
+    ))
+    if not ledger_path.exists():
+        st.caption(f"No ledger at `{ledger_path}`. No trades recorded yet.")
+        return
+
+    ledger = PaperLedger(str(ledger_path))
+    summary = summarise_ledger(ledger, limit=500)
+    s = summary.as_dict()
+
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Paper Balance", "$10,000.00")
+        st.metric("Total trades", s["total_trades"])
     with col2:
-        st.metric("Open Positions", "0")
+        st.metric("Paper", s["paper_trades"])
     with col3:
-        st.metric("P/L", "$0.00", "0.00%")
+        st.metric("Live", s["live_trades"])
+    with col4:
+        st.metric("Failed", s["failed_trades"])
 
-    st.divider()
-
-    st.subheader("Trade Simulation")
-    st.info(
-        "This is a PAPER TRADING simulator. No real transactions are executed. "
-        "Use `tao-swarm market` to get current data for analysis."
+    st.metric(
+        "Realised P&L (TAO)",
+        f"{s['realised_pnl_tao']:+.4f}",
     )
 
-    # Simple trade entry form
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.text_input("Entry Price (USD)", value="0.00", disabled=True)
-    with col_b:
-        st.text_input("Position Size (USD)", value="0.00", disabled=True)
+    if s["distinct_strategies"]:
+        st.caption(
+            "Strategies present: " + ", ".join(s["distinct_strategies"])
+        )
 
-    st.button("Simulate Entry (Paper)", disabled=True, help="Paper trading only - no real execution")
-
-    st.divider()
-
-    st.subheader("Trade History")
-    st.dataframe(
-        pd.DataFrame(columns=["Time", "Type", "Price", "Size", "P/L", "Status"]),
-        use_container_width=True,
-        hide_index=True,
-    )
+    rows = trades_to_table_rows(ledger.list_trades(limit=200))
+    if not rows:
+        st.caption("No recent trades.")
+        return
+    df = pd.DataFrame(rows)
+    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def render_run_logs():
@@ -639,8 +739,8 @@ def main():
         render_market_watch()
     elif page == "Risk Alerts":
         render_risk_alerts()
-    elif page == "Paper Trades":
-        render_paper_trades()
+    elif page == "Trading":
+        render_trading()
     elif page == "Run Logs":
         render_run_logs()
 

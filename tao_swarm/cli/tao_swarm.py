@@ -1374,6 +1374,17 @@ def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
     ),
 )
 @click.option(
+    "--status-file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Write the runner's status as JSON to this path after every "
+        "tick. The dashboard's Trading panel reads it. Recommended "
+        "to set ``data/runner_status.json`` so the default dashboard "
+        "discovery picks it up."
+    ),
+)
+@click.option(
     "--live-trading", is_flag=True,
     help=(
         "Set StrategyMeta.live_trading=True. Required (along with "
@@ -1393,7 +1404,7 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
     ctx, strategy_name, paper, keystore_path,
     threshold_pct, slot_size_tao, max_position_tao, max_daily_loss_tao,
     max_total_tao, tick_interval_s, max_ticks, ledger_db, kill_switch_path,
-    watchlist, reconcile_coldkey, verify_broadcasts,
+    watchlist, reconcile_coldkey, verify_broadcasts, status_file,
     live_trading, yes_i_understand,
 ):
     """Run a strategy live or in paper mode against the read-only collectors."""
@@ -1556,6 +1567,7 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
         tick_interval_s=tick_interval_s,
         chain_reader=chain_reader,
         reconcile_coldkey_ss58=reconcile_coldkey,
+        status_file=status_file,
     )
 
     click.echo(click.style(
