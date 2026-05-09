@@ -1678,6 +1678,101 @@ def trade_status(ledger_db, strategy_name, limit):
     click.echo()
 
 
+@trade.command("learning-report")
+@click.option(
+    "--ledger-db",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    default=Path("data") / "trades.db",
+    show_default=True,
+)
+@click.option(
+    "--window-days", default=30.0, type=float, show_default=True,
+    help="Time window for performance stats.",
+)
+@click.option(
+    "--window-trades", default=200, type=int, show_default=True,
+    help="Maximum trades per strategy to include.",
+)
+@click.option(
+    "--min-trades", default=5, type=int, show_default=True,
+    help="Below this many realised closes, mark as insufficient data.",
+)
+@click.option(
+    "--json", "json_output", is_flag=True,
+    help="Print machine-readable JSON instead of a table.",
+)
+def trade_learning_report(
+    ledger_db, window_days, window_trades, min_trades, json_output,
+):
+    """Per-strategy performance report from the audit ledger.
+
+    Computes realised P&L, win rate, and pseudo-Sharpe over the
+    chosen window. Use this to see which strategies are pulling
+    their weight in production. The same numbers feed the
+    ``EnsembleStrategy`` weight functions; running it is a sanity-
+    check before turning on adaptive routing.
+    """
+    from tao_swarm.trading import PaperLedger, PerformanceTracker
+
+    ledger = PaperLedger(str(ledger_db))
+    tracker = PerformanceTracker(ledger, min_trades=min_trades)
+    stats = tracker.all_stats(
+        window_days=window_days, window_trades=window_trades,
+    )
+
+    if json_output:
+        click.echo(json.dumps(
+            {name: perf.as_dict() for name, perf in stats.items()},
+            indent=2,
+        ))
+        return
+
+    click.echo(click.style(
+        f"\n  Learning report — window {window_days:.0f} days, "
+        f"max {window_trades} trades, min {min_trades} closes",
+        fg="blue", bold=True,
+    ))
+    if not stats:
+        click.echo("  (no strategies found in the ledger)")
+        click.echo()
+        return
+
+    click.echo()
+    header = (
+        f"    {'strategy':22s}  {'attempts':>8s}  {'closes':>6s}  "
+        f"{'pnl_tao':>10s}  {'win_rate':>8s}  {'sharpe':>7s}  data"
+    )
+    click.echo(header)
+    click.echo(f"    {'-'*22}  {'-'*8}  {'-'*6}  {'-'*10}  {'-'*8}  {'-'*7}  ----")
+
+    for name in sorted(stats):
+        p = stats[name]
+        flag = "INSUF" if p.insufficient_data else " ok"
+        click.echo(
+            f"    {name[:22]:22s}  {p.num_attempts:>8d}  "
+            f"{p.num_realised_closes:>6d}  "
+            f"{p.realised_pnl_tao:>+10.4f}  "
+            f"{p.win_rate * 100:>7.1f}%  "
+            f"{p.sharpe:>+7.4f}  {flag}"
+        )
+
+    click.echo()
+    # Suggest the inverse-loss weights so the operator can see what
+    # the ensemble would do today without committing to it.
+    from tao_swarm.trading import inverse_loss_weights
+    names = list(stats)
+    weights = inverse_loss_weights(names, tracker, window_days=window_days)
+    if weights:
+        click.echo(click.style("  Suggested ensemble weights:", fg="cyan"))
+        for name in sorted(weights, key=lambda k: -weights[k]):
+            bar_len = int(weights[name] * 30)
+            bar = "█" * bar_len + "·" * (30 - bar_len)
+            click.echo(
+                f"    {name[:22]:22s}  {bar}  {weights[name] * 100:5.1f}%"
+            )
+        click.echo()
+
+
 # ── Entry point ───────────────────────────────────────────────────────────
 
 def main_entry():
