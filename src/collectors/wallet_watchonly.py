@@ -161,48 +161,71 @@ class WalletWatchOnlyCollector(BaseCollector):
 
     def validate_address(self, address: str) -> bool:
         """
-        Validate a Bittensor SS58 address.
+        Validate a Bittensor SS58 address (prefix 42).
 
-        Uses the correct SS58 checksum algorithm for prefix 42 (Bittensor).
+        Strategy (in order, first one that works wins):
+
+        1. ``scalecodec.utils.ss58.is_valid_ss58_address`` —
+           transitively shipped with ``bittensor>=10``; the substrate-
+           ecosystem reference implementation. This is the path we
+           expect in any environment that has the SDK installed.
+        2. ``substrateinterface.utils.ss58.is_valid_ss58_address`` —
+           fallback if scalecodec isn't directly importable but
+           substrateinterface is.
+        3. ``base58`` + manual blake2b checksum — last-resort fallback
+           for ultra-minimal installs. The previous in-repo
+           implementation got the prefix-decode wrong for prefix 42
+           and rejected genuine addresses, which is why we now prefer
+           a vetted library.
 
         Args:
             address: The SS58 address string to validate.
 
         Returns:
-            True if the address is a valid SS58 address, False otherwise.
+            True if the address is a valid SS58 address (prefix 42),
+            False otherwise.
         """
         if not address or not isinstance(address, str):
             return False
-        # Bittensor SS58 addresses start with '5' and are 48 characters
+        # Cheap structural reject before doing any decoding work.
         if not re.match(r"^5[a-zA-Z0-9]{47}$", address):
             return False
 
         try:
+            from scalecodec.utils.ss58 import (
+                is_valid_ss58_address,  # type: ignore[import-not-found]
+            )
+            return bool(is_valid_ss58_address(address, valid_ss58_format=SS58_PREFIX))
+        except ImportError:
+            pass
+        try:
+            from substrateinterface.utils.ss58 import (
+                is_valid_ss58_address,  # type: ignore[import-not-found]
+            )
+            return bool(is_valid_ss58_address(address, valid_ss58_format=SS58_PREFIX))
+        except ImportError:
+            pass
+
+        # Manual fallback (kept correct for the common single-byte prefix).
+        try:
+            import hashlib
+
             import base58
 
             decoded = base58.b58decode(address)
             if len(decoded) != 35:
                 return False
-
-            # Prefix check: 42 (Bittensor substrate prefix)
-            prefix_len = 1
-            prefix = decoded[0]
-            if prefix >= 64:
-                prefix_len = 2
-                prefix = ((prefix - 64) << 2) | (decoded[1] & 0b11)
-            if prefix != SS58_PREFIX:
+            # Bittensor prefix is 42 → fits in a single byte (< 64).
+            if decoded[0] != SS58_PREFIX:
                 return False
-
-            # Checksum
-            import hashlib
-
-            check_data = decoded[:33 + prefix_len]
+            check_data = b"SS58PRE" + decoded[:-2]
             checksum_full = hashlib.blake2b(check_data, digest_size=64).digest()
-            checksum = checksum_full[:2]
-            return decoded[-2:] == checksum
+            return decoded[-2:] == checksum_full[:2]
         except ImportError:
-            # Fallback: basic regex validation if base58 not installed
-            return bool(re.match(r"^5[a-zA-Z0-9]{47}$", address))
+            # Without base58 we can't checksum-verify. Be conservative
+            # and accept the structural shape — the caller still hits
+            # the chain for the authoritative answer.
+            return True
         except Exception:
             return False
 
@@ -304,18 +327,21 @@ class WalletWatchOnlyCollector(BaseCollector):
                 # Subscan responded but returned no usable data
                 # (HTTP non-200, code != 0, or empty body). The
                 # upstream call ran — we just don't trust the
-                # answer. Demote mode to "mock" so the cached fixture
-                # is tagged honestly.
+                # answer. Tag the fallback with a reason so callers
+                # can tell "live ran and gave nothing" apart from
+                # "live wasn't requested".
+                self._mock_fallback_reason = (
+                    "Subscan returned no usable data "
+                    "(HTTP non-200, code != 0, or address unknown)"
+                )
                 mode = "mock"
             except Exception as exc:
                 logger.warning(
                     "Subscan balance lookup for %s failed: %s — "
                     "falling back to mock", address[:10], exc,
                 )
-                # Re-resolve mode so the meta block carries a
-                # fallback_reason that names the upstream failure.
                 self._mock_fallback_reason = (
-                    f"Subscan request failed: {type(exc).__name__}"
+                    f"Subscan request failed: {type(exc).__name__}: {exc}"
                 )
                 mode = "mock"
 
@@ -562,7 +588,12 @@ class WalletWatchOnlyCollector(BaseCollector):
                     self._cache_set("staking_cache", "address", address, live)
                     return live
                 # Subscan responded but with no usable staking data —
-                # demote mode so the meta tags honestly.
+                # tag a reason so consumers can distinguish "live ran,
+                # got nothing" from "live wasn't requested".
+                self._mock_fallback_reason = (
+                    "Subscan returned no usable staking data "
+                    "(HTTP non-200, code != 0, or address unknown)"
+                )
                 mode = "mock"
             except Exception as exc:
                 logger.warning(
@@ -570,7 +601,7 @@ class WalletWatchOnlyCollector(BaseCollector):
                     "falling back to mock", address[:10], exc,
                 )
                 self._mock_fallback_reason = (
-                    f"Subscan request failed: {type(exc).__name__}"
+                    f"Subscan request failed: {type(exc).__name__}: {exc}"
                 )
                 mode = "mock"
 

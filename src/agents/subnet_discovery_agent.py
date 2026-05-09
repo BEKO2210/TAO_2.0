@@ -1,9 +1,26 @@
 """
 Subnet Discovery Agent (Agent 3).
 
-Discovers and catalogs Bittensor subnets, gathering information
-about NetUID, name, purpose, repositories, documentation, and
-hardware requirements. Provides a preliminary traffic-light rating.
+Discovers and catalogs Bittensor subnets via the chain collector
+(``src.collectors.chain_readonly.ChainReadOnlyCollector``) and
+enriches each entry with a hand-curated metadata table for the
+fields the chain doesn't carry (purpose, category, repo_url,
+docs_url, hardware_min). Provides a preliminary traffic-light
+rating per subnet.
+
+Discovery sources, in priority order:
+
+1. Live chain via ``ChainReadOnlyCollector.get_subnet_list()`` —
+   when ``bittensor`` is installed. Reflects the real netuid space
+   (60+ subnets at time of writing).
+2. Chain mock list — when the SDK isn't installed; collector falls
+   back to its own mock fixtures (8 subnets) and tags
+   ``_meta.fallback_reason``.
+3. Hand-curated metadata hints — overlaid on every chain entry to
+   fill in fields the chain doesn't provide. Subnets present in
+   the metadata table but missing from the chain view are
+   surfaced separately so the user knows which catalog entries
+   are stale.
 """
 
 import logging
@@ -20,14 +37,30 @@ class SubnetDiscoveryAgent:
     """
     Agent for discovering and cataloging Bittensor subnets.
 
-    Gathers metadata about available subnets including NetUID, name,
-    purpose, source repositories, documentation links, and hardware
-    requirements. Provides a preliminary traffic-light assessment
-    (green/yellow/red) for quick filtering.
+    Calls the chain collector for the canonical subnet list and
+    overlays hand-curated metadata (category / purpose /
+    hardware_min / repo_url / docs_url) on each entry. Provides a
+    preliminary traffic-light assessment (green/yellow/red) for
+    quick filtering.
+
+    Config keys:
+      - ``use_mock_data`` (bool): forwarded to the chain collector.
+        When True (default), the collector won't try to import
+        bittensor.
+      - ``filter_active`` (bool): default True; only return active
+        subnets unless ``include_inactive`` is set per-task.
+      - ``categories`` (list[str]): default-narrow filter on the
+        ``category`` enrichment field.
+      - ``chain_collector``: optional pre-built collector instance
+        (mainly for tests / dependency injection).
     """
 
-    # Known subnet catalog (will be expanded with live discovery)
-    _KNOWN_SUBNETS: list[dict[str, Any]] = [
+    # Hand-curated metadata for known subnets. The chain provides
+    # netuid, name, owner, block-stats, neuron counts, emission —
+    # but not the human-friendly fields below. We overlay these on
+    # whatever the chain returns; entries here that the chain
+    # doesn't see today are reported separately as "metadata-only".
+    _SUBNET_METADATA_HINTS: list[dict[str, Any]] = [
         {
             "netuid": 0,
             "name": "Root",
@@ -225,21 +258,41 @@ class SubnetDiscoveryAgent:
         Initialize the SubnetDiscoveryAgent.
 
         Args:
-            config: Configuration dictionary with optional:
-                - subnets: Pre-defined subnet list
-                - filter_active: Only show active subnets
-                - categories: Filter by category list
+            config: Configuration dictionary with optional keys
+                listed in the class docstring.
         """
         self.config: dict = config
         self._status: str = "idle"
         self._discovery_log: list[dict] = []
-        self._subnets: list[dict] = list(self._KNOWN_SUBNETS)
         self._filter_active: bool = config.get("filter_active", True)
         self._categories: list[str] = config.get("categories", [])
+        # Build a netuid → metadata-hint dict for fast overlay lookup.
+        self._metadata_by_netuid: dict[int, dict] = {
+            entry["netuid"]: dict(entry)
+            for entry in self._SUBNET_METADATA_HINTS
+        }
+        # Lazily-instantiated chain collector. Tests can inject one
+        # via config["chain_collector"]; otherwise we build one with
+        # config-derived settings on first use.
+        self._chain_collector: Any = config.get("chain_collector")
         logger.info(
-            "SubnetDiscoveryAgent initialized (known_subnets=%d)",
-            len(self._subnets),
+            "SubnetDiscoveryAgent initialized (metadata_hints=%d)",
+            len(self._metadata_by_netuid),
         )
+
+    def _get_chain_collector(self) -> Any:
+        """Lazy chain-collector init so tests can run without a chain."""
+        if self._chain_collector is None:
+            from src.collectors.chain_readonly import ChainReadOnlyCollector
+            chain_cfg = {
+                "use_mock_data": self.config.get("use_mock_data", True),
+                "network": self.config.get("network", "mock"),
+                "db_path": self.config.get(
+                    "chain_db_path", "data/chain_cache.db"
+                ),
+            }
+            self._chain_collector = ChainReadOnlyCollector(chain_cfg)
+        return self._chain_collector
 
     def run(self, task: dict) -> dict:
         """
@@ -263,24 +316,38 @@ class SubnetDiscoveryAgent:
         logger.info("SubnetDiscoveryAgent: discovering subnets")
 
         try:
-            # Filter subnets
+            # 1) Pull the canonical subnet list from the chain collector.
+            #    The collector handles mock fallback internally and tags
+            #    the source on each entry via its own meta channel.
+            chain_subnets, source = self._collect_subnet_list()
+
+            # 2) Overlay our hand-curated metadata onto each chain entry,
+            #    and surface metadata-only entries (known to us but not
+            #    to the chain) under a separate key so the user can
+            #    spot stale catalog rows.
+            merged, metadata_only = self._merge_with_metadata(chain_subnets)
+
+            # 3) Apply user-supplied filters.
             filtered_subnets = self._filter_subnets(
+                merged,
                 filter_str=filter_str,
                 netuid_filter=netuid_filter,
                 include_inactive=include_inactive,
             )
 
-            # Add traffic-light rating
+            # 4) Traffic-light rating + sort.
             rated_subnets = [self._rate_subnet(s) for s in filtered_subnets]
-
-            # Sort by rating (green first)
-            rated_subnets.sort(key=lambda s: {"green": 0, "yellow": 1, "red": 2}.get(s["rating"], 3))
+            rated_subnets.sort(
+                key=lambda s: {"green": 0, "yellow": 1, "red": 2}.get(s["rating"], 3)
+            )
 
             result = {
                 "status": "complete",
                 "subnet_count": len(rated_subnets),
                 "subnets": rated_subnets,
+                "metadata_only_subnets": metadata_only,
                 "summary": self._generate_summary(rated_subnets),
+                "source": source,
                 "filters_applied": {
                     "filter": filter_str,
                     "netuid": netuid_filter,
@@ -291,11 +358,13 @@ class SubnetDiscoveryAgent:
             self._discovery_log.append({
                 "timestamp": time.time(),
                 "filter": filter_str,
+                "source": source,
                 "results_count": len(rated_subnets),
             })
             self._status = "complete"
             logger.info(
-                "SubnetDiscoveryAgent: discovered %d subnets", len(rated_subnets)
+                "SubnetDiscoveryAgent: discovered %d subnets (source=%s)",
+                len(rated_subnets), source,
             )
             return result
 
@@ -321,7 +390,7 @@ class SubnetDiscoveryAgent:
             "version": AGENT_VERSION,
             "status": self._status,
             "discovery_count": len(self._discovery_log),
-            "known_subnets": len(self._subnets),
+            "metadata_hints": len(self._metadata_by_netuid),
         }
 
     def validate_input(self, task: dict) -> tuple[bool, str]:
@@ -344,8 +413,87 @@ class SubnetDiscoveryAgent:
             return False, "netuid must be an integer"
         return True, ""
 
+    def _collect_subnet_list(self) -> tuple[list[dict], str]:
+        """
+        Pull the subnet list from the chain collector.
+
+        Returns:
+            Tuple of (subnet list, source tag). The source tag is one
+            of ``"chain"`` (live), ``"chain_mock"`` (collector
+            fell back to mock fixtures), or ``"metadata_hints_only"``
+            (chain call failed entirely; we surface the hand-curated
+            list as a last resort).
+        """
+        try:
+            collector = self._get_chain_collector()
+            subnets = collector.get_subnet_list()
+            if not isinstance(subnets, list) or not subnets:
+                # Empty / malformed chain response — fall back to hints.
+                return [
+                    dict(entry) for entry in self._SUBNET_METADATA_HINTS
+                ], "metadata_hints_only"
+            # Distinguish live vs mock by the collector's own mode flag.
+            source = (
+                "chain_mock" if getattr(collector, "use_mock_data", True)
+                else "chain"
+            )
+            return list(subnets), source
+        except Exception as exc:
+            logger.warning(
+                "SubnetDiscoveryAgent: chain collector unavailable (%s); "
+                "falling back to hand-curated metadata hints",
+                exc,
+            )
+            return [
+                dict(entry) for entry in self._SUBNET_METADATA_HINTS
+            ], "metadata_hints_only"
+
+    def _merge_with_metadata(
+        self, chain_subnets: list[dict],
+    ) -> tuple[list[dict], list[dict]]:
+        """
+        Overlay hand-curated metadata onto the chain's subnet list.
+
+        Chain provides the authoritative netuid + name + economic
+        fields. Metadata hints provide purpose / category /
+        repo_url / docs_url / hardware_min when we know them.
+
+        Returns:
+            (merged_list, metadata_only_list). The first is what to
+            present as "discovered subnets". The second names entries
+            we have curated metadata for that the chain isn't
+            reporting today (stale catalog rows or netuids that have
+            been deregistered).
+        """
+        chain_by_netuid = {
+            int(s["netuid"]): s for s in chain_subnets
+            if isinstance(s, dict) and "netuid" in s
+        }
+        merged: list[dict] = []
+        for netuid, chain_entry in chain_by_netuid.items():
+            base = dict(chain_entry)
+            hint = self._metadata_by_netuid.get(netuid)
+            if hint:
+                # Metadata fills in fields the chain doesn't have, but
+                # never overrides chain values (chain is authoritative
+                # for name / owner / economic stats).
+                for key, value in hint.items():
+                    if key in ("netuid",):
+                        continue
+                    base.setdefault(key, value)
+            base.setdefault("active", True)
+            merged.append(base)
+        # Surface metadata entries that the chain isn't reporting.
+        metadata_only = [
+            dict(hint)
+            for netuid, hint in self._metadata_by_netuid.items()
+            if netuid not in chain_by_netuid
+        ]
+        return merged, metadata_only
+
     def _filter_subnets(
         self,
+        subnets: list[dict],
         filter_str: str = "",
         netuid_filter: int | None = None,
         include_inactive: bool = False,
@@ -354,6 +502,7 @@ class SubnetDiscoveryAgent:
         Filter subnets based on criteria.
 
         Args:
+            subnets: The merged chain+metadata list to filter.
             filter_str: Name or category filter
             netuid_filter: Specific NetUID
             include_inactive: Whether to include inactive subnets
@@ -361,7 +510,7 @@ class SubnetDiscoveryAgent:
         Returns:
             Filtered list of subnet dictionaries
         """
-        result = list(self._subnets)
+        result = list(subnets)
 
         # Filter by active status
         if not include_inactive and self._filter_active:
