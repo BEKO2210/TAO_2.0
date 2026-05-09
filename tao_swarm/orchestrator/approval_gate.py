@@ -629,15 +629,86 @@ class ApprovalGate:
         """Return the current wallet mode."""
         return self._wallet_mode
 
+    # The four wallet modes the gate recognises. ``FULL`` is the
+    # legacy name for ``MANUAL_SIGNING`` and is preserved for
+    # backwards compatibility with older configs / tests.
+    _RECOGNISED_MODES = (
+        "NO_WALLET",
+        "WATCH_ONLY",
+        "MANUAL_SIGNING",
+        "FULL",
+        "AUTO_TRADING",
+    )
+
     def set_wallet_mode(self, mode: str) -> None:
         """
         Change the wallet mode (requires logging).
 
         Args:
-            mode: One of "NO_WALLET", "WATCH_ONLY", "FULL"
+            mode: One of ``NO_WALLET``, ``WATCH_ONLY``,
+                ``MANUAL_SIGNING`` (or its legacy alias ``FULL``),
+                or ``AUTO_TRADING``. Anything else raises.
         """
         mode = mode.upper()
-        if mode not in ("NO_WALLET", "WATCH_ONLY", "FULL"):
+        if mode not in self._RECOGNISED_MODES:
             raise ValueError(f"Invalid wallet_mode: {mode}")
         logger.info("Wallet mode changed: %s -> %s", self._wallet_mode, mode)
         self._wallet_mode = mode
+
+    # ------------------------------------------------------------------
+    # AUTO_TRADING authorisation
+    # ------------------------------------------------------------------
+
+    def auto_trading_status(
+        self, executor: Any | None,
+    ) -> tuple[bool, str]:
+        """
+        Decide whether the gate currently authorises live execution
+        of a ``DANGER`` action through the supplied auto-trading
+        executor.
+
+        Returns ``(True, "")`` only when ALL of the following hold:
+
+        1. ``self.wallet_mode == "AUTO_TRADING"``.
+        2. An ``executor`` was supplied.
+        3. The executor's mode is also ``AUTO_TRADING``.
+        4. The executor's kill switch is NOT tripped.
+        5. The executor's daily-loss limit is NOT breached.
+
+        On the first failing check the method returns
+        ``(False, reason)``. The caller MUST treat ``False`` as
+        "fall back to plan-only output". The position-cap check is
+        deliberately deferred: it depends on the per-call
+        ``current_total_tao`` and the requested ``amount_tao``,
+        neither of which the gate has at classification time.
+        ``Executor.execute()`` re-runs the position-cap check
+        atomically before any value moves.
+
+        This method is read-only; it never mutates anything.
+        """
+        if self._wallet_mode != "AUTO_TRADING":
+            return False, (
+                f"wallet_mode is {self._wallet_mode!r}, not AUTO_TRADING"
+            )
+        if executor is None:
+            return False, "no auto-trading executor configured"
+        # Defer to the executor's own state — single source of truth.
+        ex_mode = getattr(executor, "mode", None)
+        if str(ex_mode) not in ("AUTO_TRADING", "WalletMode.AUTO_TRADING"):
+            ex_mode_value = getattr(ex_mode, "value", ex_mode)
+            if ex_mode_value != "AUTO_TRADING":
+                return False, (
+                    f"executor.mode is {ex_mode_value!r}, not AUTO_TRADING"
+                )
+        kill = getattr(executor, "_kill", None)
+        if kill is not None and getattr(kill, "is_tripped", lambda: False)():
+            state = getattr(kill, "state", lambda: None)()
+            reason = getattr(state, "reason", None) or "unspecified"
+            return False, f"kill switch is tripped: {reason}"
+        loss = getattr(executor, "_loss", None)
+        if loss is not None and getattr(loss, "is_breached", lambda: False)():
+            return False, (
+                f"daily loss limit hit: pnl={loss.daily_pnl():.4f} TAO, "
+                f"limit -{loss.limit_tao} TAO"
+            )
+        return True, ""
