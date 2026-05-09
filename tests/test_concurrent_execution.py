@@ -24,7 +24,7 @@ from __future__ import annotations
 import threading
 import time
 
-from src.agents import (
+from tao_swarm.agents import (
     MarketTradeAgent,
     ProtocolResearchAgent,
     RiskSecurityAgent,
@@ -32,7 +32,7 @@ from src.agents import (
     SubnetScoringAgent,
     SystemCheckAgent,
 )
-from src.orchestrator import SwarmOrchestrator
+from tao_swarm.orchestrator import SwarmOrchestrator
 
 
 def _build_orch() -> SwarmOrchestrator:

@@ -27,7 +27,7 @@ Usage
 
 Path-based, programmatic::
 
-    from src.orchestrator import SwarmOrchestrator, load_plugins
+    from tao_swarm.orchestrator import SwarmOrchestrator, load_plugins
     orch = SwarmOrchestrator({"use_mock_data": True})
     summary = load_plugins(orch, paths=["/home/user/my-agents"])
     print(summary)

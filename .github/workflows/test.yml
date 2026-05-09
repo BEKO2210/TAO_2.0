@@ -68,7 +68,7 @@ jobs:
           pip install ruff
 
       - name: ruff check
-        run: ruff check src tests
+        run: ruff check tao_swarm tests scripts
 
       # ruff format --check is intentionally not enabled yet. The
       # initial pass would rewrite 60+ files cosmetically, drowning

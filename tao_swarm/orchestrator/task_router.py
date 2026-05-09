@@ -72,7 +72,7 @@ class TaskRouter:
         # Pick up agent-declared capabilities so plug-ins (and any
         # built-in that adopts the new convention) auto-route without
         # editing _DEFAULT_TASK_MAP.
-        from src.orchestrator.capabilities import discover_capabilities
+        from tao_swarm.orchestrator.capabilities import discover_capabilities
 
         capabilities = discover_capabilities(agent_instance)
         added: list[str] = []
@@ -97,7 +97,7 @@ class TaskRouter:
         swarm do?". Each entry carries the owning agent_name so the
         dashboard can group by agent.
         """
-        from src.orchestrator.capabilities import discover_capabilities
+        from tao_swarm.orchestrator.capabilities import discover_capabilities
 
         out: list[dict] = []
         for agent_name, instance in self._agents.items():

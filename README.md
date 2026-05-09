@@ -103,7 +103,7 @@
 
 ## Die 15 Agenten
 
-Alle Agenten in `src/agents/` folgen dem SPEC.md-Kontrakt: `run` / `get_status` / `validate_input` + `AGENT_NAME` / `AGENT_VERSION` (Modul-Konstanten).
+Alle Agenten in `tao_swarm/agents/` folgen dem SPEC.md-Kontrakt: `run` / `get_status` / `validate_input` + `AGENT_NAME` / `AGENT_VERSION` (Modul-Konstanten).
 
 | # | Agent | Zweck |
 |---|-------|-------|
@@ -367,28 +367,28 @@ make lint
 
 ```bash
 # 1) System-Check (mock — keine Netz-Calls)
-python -m src.cli.tao_swarm check
+tao-swarm check
 
 # 2) Subnet-Liste anzeigen
-python -m src.cli.tao_swarm subnets --limit 5
+tao-swarm subnets --limit 5
 # → MODE: mock (offline fixtures)  — pass --live for real data
 
 # 3) Live-Daten von finney (braucht installiertes bittensor SDK)
-python -m src.cli.tao_swarm --live subnets --limit 5
+tao-swarm --live subnets --limit 5
 # → MODE: live (network=finney)
 
 # 4) Subnet 12 scoren
-python -m src.cli.tao_swarm score 12 --detailed
+tao-swarm score 12 --detailed
 
 # 5) Wallet beobachten (read-only)
-python -m src.cli.tao_swarm watch 5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy --label cold1
+tao-swarm watch 5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy --label cold1
 
 # 6) Risk-Review eines Texts (z.B. einer Telegram-Nachricht)
-python -m src.cli.tao_swarm risk --content "Schedule_coldkey_swap to 5XYZ... within 5 days"
+tao-swarm risk --content "Schedule_coldkey_swap to 5XYZ... within 5 days"
 # → DANGER: coldkey_swap_social_engineering CRITICAL
 
 # 7) Dashboard starten (Streamlit optional)
-python -m src.cli.tao_swarm dashboard
+tao-swarm dashboard
 ```
 
 ---
@@ -540,7 +540,7 @@ scorer.score_subnet({"netuid": 12, "metagraph": {...}, "taoflow": {...}})
 
 ### Strukturelle Garantie
 
-`src/collectors/chain_readonly.py` enthält `_WRITE_METHODS_DENYLIST` (`add_stake`, `unstake`, `transfer`, `set_weights`, `commit_weights`, …). Ein Source-Scan-Test (`test_collector_source_does_not_call_any_write_method`) failt den Build, wenn ein Write-Call jemals reinrutscht.
+`tao_swarm/collectors/chain_readonly.py` enthält `_WRITE_METHODS_DENYLIST` (`add_stake`, `unstake`, `transfer`, `set_weights`, `commit_weights`, …). Ein Source-Scan-Test (`test_collector_source_does_not_call_any_write_method`) failt den Build, wenn ein Write-Call jemals reinrutscht.
 
 ---
 

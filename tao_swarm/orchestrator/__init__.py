@@ -9,22 +9,22 @@ Exports the core orchestration components:
 - load_plugins: User-defined external agents (path or entry-point based)
 """
 
-from src.orchestrator.approval_gate import ApprovalGate, Classification
-from src.orchestrator.context import AgentContext
-from src.orchestrator.orchestrator import SwarmOrchestrator
-from src.orchestrator.plugin_loader import (
+from tao_swarm.orchestrator.approval_gate import ApprovalGate, Classification
+from tao_swarm.orchestrator.context import AgentContext
+from tao_swarm.orchestrator.orchestrator import SwarmOrchestrator
+from tao_swarm.orchestrator.plugin_loader import (
     ON_CONFLICT_ERROR,
     ON_CONFLICT_REPLACE,
     ON_CONFLICT_SKIP,
     PluginLoadSummary,
     load_plugins,
 )
-from src.orchestrator.resilience import (
+from tao_swarm.orchestrator.resilience import (
     CancelToken,
     RetryPolicy,
     TaskTimeoutError,
 )
-from src.orchestrator.task_router import TaskRouter
+from tao_swarm.orchestrator.task_router import TaskRouter
 
 __all__ = [
     "ON_CONFLICT_ERROR",

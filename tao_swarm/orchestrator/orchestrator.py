@@ -13,17 +13,17 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from src.orchestrator.approval_gate import ApprovalGate
-from src.orchestrator.context import AgentContext
-from src.orchestrator.progress import _OrchestratorProgressChannel
-from src.orchestrator.resilience import (
+from tao_swarm.orchestrator.approval_gate import ApprovalGate
+from tao_swarm.orchestrator.context import AgentContext
+from tao_swarm.orchestrator.progress import _OrchestratorProgressChannel
+from tao_swarm.orchestrator.resilience import (
     CancelToken,
     run_with_resilience,
 )
-from src.orchestrator.resilience import (
+from tao_swarm.orchestrator.resilience import (
     from_task_field as _resolve_retry_policy,
 )
-from src.orchestrator.task_router import TaskRouter
+from tao_swarm.orchestrator.task_router import TaskRouter
 
 logger = logging.getLogger(__name__)
 

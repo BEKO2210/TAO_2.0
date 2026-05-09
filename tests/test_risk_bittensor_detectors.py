@@ -26,8 +26,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.agents.risk_security_agent import RiskSecurityAgent
-from src.orchestrator.approval_gate import ApprovalGate, Classification
+from tao_swarm.agents.risk_security_agent import RiskSecurityAgent
+from tao_swarm.orchestrator.approval_gate import ApprovalGate, Classification
 
 # ---------------------------------------------------------------------------
 # scan_bittensor_dependency

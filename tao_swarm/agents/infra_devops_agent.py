@@ -268,7 +268,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
     CMD python -c "print('healthy')" || exit 1
 
 # Default command
-CMD ["python", "-m", "src.orchestrator.orchestrator"]
+CMD ["python", "-m", "tao_swarm.orchestrator.orchestrator"]
 """
 
         return {

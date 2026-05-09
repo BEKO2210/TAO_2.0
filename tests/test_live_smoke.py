@@ -31,7 +31,7 @@ def test_live_chain_lists_real_subnets(tmp_path):
     each rich entry carries an ``identity`` block with at least
     ``description`` set on the curated ones."""
     pytest.importorskip("bittensor", reason="bittensor SDK not installed")
-    from src.collectors.chain_readonly import ChainReadOnlyCollector
+    from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
 
     c = ChainReadOnlyCollector({
         "use_mock_data": False, "network": "finney",
@@ -62,7 +62,7 @@ def test_live_chain_subnet_info_real_economics(tmp_path):
     """Subnet 1 (Apex) is a stable canary. Live read should yield
     chain-derived emission / hyperparameter fields, not mock."""
     pytest.importorskip("bittensor", reason="bittensor SDK not installed")
-    from src.collectors.chain_readonly import ChainReadOnlyCollector
+    from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
 
     c = ChainReadOnlyCollector({
         "use_mock_data": False, "network": "finney",
@@ -85,7 +85,7 @@ _KNOWN_GOOD_SS58 = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 
 
 def test_validate_address_accepts_real_ss58():
-    from src.collectors.wallet_watchonly import WalletWatchOnlyCollector
+    from tao_swarm.collectors.wallet_watchonly import WalletWatchOnlyCollector
 
     c = WalletWatchOnlyCollector({"use_mock_data": True, "db_path": "/tmp/ws.db"})
     assert c.validate_address(_KNOWN_GOOD_SS58) is True
@@ -97,7 +97,7 @@ def test_live_wallet_balance_either_real_or_clean_fallback(tmp_path):
     """Live Subscan call must produce either a live balance dict or
     a fallback dict with ``_meta.fallback_reason`` set. It must
     never raise."""
-    from src.collectors.wallet_watchonly import WalletWatchOnlyCollector
+    from tao_swarm.collectors.wallet_watchonly import WalletWatchOnlyCollector
 
     c = WalletWatchOnlyCollector({
         "use_mock_data": False,
@@ -122,7 +122,7 @@ def test_live_wallet_balance_either_real_or_clean_fallback(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_live_tao_price_either_real_or_error(tmp_path):
-    from src.collectors.market_data import MarketDataCollector
+    from tao_swarm.collectors.market_data import MarketDataCollector
 
     c = MarketDataCollector({
         "use_mock_data": False,
@@ -151,7 +151,7 @@ def test_live_market_trade_agent_uses_collector(tmp_path):
     """End-to-end: the market-trade agent in live mode pulls real
     price + volume from the ``MarketDataCollector`` and produces an
     analysis tagged ``source=coingecko``."""
-    from src.agents.market_trade_agent import MarketTradeAgent
+    from tao_swarm.agents.market_trade_agent import MarketTradeAgent
 
     agent = MarketTradeAgent({
         "use_mock_data": False,
@@ -186,9 +186,9 @@ def test_live_subnet_scoring_uses_chain_economics(tmp_path):
     economics (``tao_in``), the competition score must reflect the
     live stake rather than the hardcoded netuid heuristic."""
     pytest.importorskip("bittensor", reason="bittensor SDK not installed")
-    from src.agents.subnet_discovery_agent import SubnetDiscoveryAgent
-    from src.agents.subnet_scoring_agent import SubnetScoringAgent
-    from src.orchestrator import SwarmOrchestrator
+    from tao_swarm.agents.subnet_discovery_agent import SubnetDiscoveryAgent
+    from tao_swarm.agents.subnet_scoring_agent import SubnetScoringAgent
+    from tao_swarm.orchestrator import SwarmOrchestrator
 
     orch = SwarmOrchestrator({
         "use_mock_data": False, "network": "finney",
@@ -243,8 +243,8 @@ def test_live_subnet_discovery_agent_returns_real_subnets(tmp_path):
     return a real chain-derived subnet list when bittensor is
     installed and live mode is on."""
     pytest.importorskip("bittensor", reason="bittensor SDK not installed")
-    from src.agents.subnet_discovery_agent import SubnetDiscoveryAgent
-    from src.orchestrator import SwarmOrchestrator
+    from tao_swarm.agents.subnet_discovery_agent import SubnetDiscoveryAgent
+    from tao_swarm.orchestrator import SwarmOrchestrator
 
     orch = SwarmOrchestrator({
         "use_mock_data": False, "network": "finney",
@@ -291,11 +291,11 @@ def test_live_full_swarm_workflow(tmp_path):
     rather than fails) — those are environmental and not regressions.
     """
     pytest.importorskip("bittensor", reason="bittensor SDK not installed")
-    from src.agents.market_trade_agent import MarketTradeAgent
-    from src.agents.risk_security_agent import RiskSecurityAgent
-    from src.agents.subnet_discovery_agent import SubnetDiscoveryAgent
-    from src.agents.subnet_scoring_agent import SubnetScoringAgent
-    from src.orchestrator import SwarmOrchestrator
+    from tao_swarm.agents.market_trade_agent import MarketTradeAgent
+    from tao_swarm.agents.risk_security_agent import RiskSecurityAgent
+    from tao_swarm.agents.subnet_discovery_agent import SubnetDiscoveryAgent
+    from tao_swarm.agents.subnet_scoring_agent import SubnetScoringAgent
+    from tao_swarm.orchestrator import SwarmOrchestrator
 
     cfg = {
         "use_mock_data": False, "network": "finney",

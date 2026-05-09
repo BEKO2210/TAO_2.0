@@ -13,7 +13,7 @@ import sqlite3
 import time
 from typing import Any
 
-from src.collectors._base import BaseCollector
+from tao_swarm.collectors._base import BaseCollector
 
 logger = logging.getLogger(__name__)
 

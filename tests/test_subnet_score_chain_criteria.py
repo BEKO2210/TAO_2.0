@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.scoring.subnet_score import SubnetScorer
+from tao_swarm.scoring.subnet_score import SubnetScorer
 
 
 @pytest.fixture

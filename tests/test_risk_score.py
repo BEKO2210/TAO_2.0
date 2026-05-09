@@ -12,7 +12,7 @@ Tests cover:
 
 import pytest
 
-from src.scoring.risk_score import RISK_CATEGORY_WEIGHTS, RiskScorer
+from tao_swarm.scoring.risk_score import RISK_CATEGORY_WEIGHTS, RiskScorer
 
 # ---------------------------------------------------------------------------
 # Helpers

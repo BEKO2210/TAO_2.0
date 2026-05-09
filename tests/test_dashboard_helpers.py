@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-import src.dashboard.app as dash
+import tao_swarm.dashboard.app as dash
 
 
 @pytest.fixture(autouse=True)

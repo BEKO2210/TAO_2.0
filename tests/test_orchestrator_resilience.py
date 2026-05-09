@@ -25,13 +25,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.orchestrator import (
+from tao_swarm.orchestrator import (
     CancelToken,
     RetryPolicy,
     SwarmOrchestrator,
     TaskTimeoutError,
 )
-from src.orchestrator.resilience import (
+from tao_swarm.orchestrator.resilience import (
     from_task_field,
     run_with_resilience,
     run_with_timeout,

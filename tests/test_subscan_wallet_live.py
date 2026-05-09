@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.collectors.wallet_watchonly import (
+from tao_swarm.collectors.wallet_watchonly import (
     _PLANCK_PER_TAO,
     WalletWatchOnlyCollector,
 )
@@ -67,7 +67,7 @@ def test_balance_live_path_parses_subscan_response(tmp_path):
             }
         },
     }
-    with patch("src.collectors.wallet_watchonly.requests.post",
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post",
                return_value=_ok(payload)):
         bal = c.get_balance(_ADDR)
 
@@ -84,7 +84,7 @@ def test_balance_subscan_error_code_falls_back_to_mock(tmp_path):
     c = WalletWatchOnlyCollector({"db_path": str(db), "use_mock_data": False})
 
     payload = {"code": 10001, "message": "Address not found", "data": {}}
-    with patch("src.collectors.wallet_watchonly.requests.post",
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post",
                return_value=_ok(payload)):
         bal = c.get_balance(_ADDR)
 
@@ -97,7 +97,7 @@ def test_balance_http_500_falls_back_to_mock(tmp_path):
     db = tmp_path / "ww.db"
     c = WalletWatchOnlyCollector({"db_path": str(db), "use_mock_data": False})
 
-    with patch("src.collectors.wallet_watchonly.requests.post",
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post",
                return_value=_err(500)):
         bal = c.get_balance(_ADDR)
     assert bal["_meta"]["mode"] == "mock"
@@ -109,7 +109,7 @@ def test_balance_network_exception_records_fallback_reason(tmp_path):
     db = tmp_path / "ww.db"
     c = WalletWatchOnlyCollector({"db_path": str(db), "use_mock_data": False})
 
-    with patch("src.collectors.wallet_watchonly.requests.post",
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post",
                side_effect=_r.exceptions.Timeout("upstream slow")):
         bal = c.get_balance(_ADDR)
 
@@ -147,7 +147,7 @@ def test_staking_live_path_parses_delegations(tmp_path):
             "nominator_balance": "0",
         },
     }
-    with patch("src.collectors.wallet_watchonly.requests.post",
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post",
                return_value=_ok(payload)):
         info = c.get_staking_info(_ADDR)
 
@@ -165,7 +165,7 @@ def test_staking_empty_delegation_list_yields_zero_totals(tmp_path):
 
     payload = {"code": 0, "data": {"list": [], "total": "0",
                                     "nominator_balance": "0"}}
-    with patch("src.collectors.wallet_watchonly.requests.post",
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post",
                return_value=_ok(payload)):
         info = c.get_staking_info(_ADDR)
 
@@ -211,7 +211,7 @@ def test_api_key_header_sent_on_subscan_call(tmp_path):
                           "json": json, "timeout": timeout})
         return _ok({"code": 0, "data": {"account": {"balance": "0", "reserved": "0"}}})
 
-    with patch("src.collectors.wallet_watchonly.requests.post",
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post",
                side_effect=_capturing_post):
         c.get_balance(_ADDR)
 
@@ -231,7 +231,7 @@ def test_no_api_key_header_when_none_configured(tmp_path, monkeypatch):
         captured.update({"headers": headers})
         return _ok({"code": 0, "data": {"account": {"balance": "0", "reserved": "0"}}})
 
-    with patch("src.collectors.wallet_watchonly.requests.post",
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post",
                side_effect=_capturing_post):
         c.get_balance(_ADDR)
 
@@ -251,7 +251,7 @@ def test_mock_mode_does_not_call_subscan(tmp_path):
         "use_mock_data": True,
         "subscan_api_key": "ignored",
     })
-    with patch("src.collectors.wallet_watchonly.requests.post") as post:
+    with patch("tao_swarm.collectors.wallet_watchonly.requests.post") as post:
         bal = c.get_balance(_ADDR)
         info = c.get_staking_info(_ADDR)
     assert post.call_count == 0

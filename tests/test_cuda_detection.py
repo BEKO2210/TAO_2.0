@@ -15,9 +15,9 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import patch
 
-from src.agents._hardware import hardware_profile_from_context
-from src.agents.system_check_agent import SystemCheckAgent
-from src.orchestrator import AgentContext
+from tao_swarm.agents._hardware import hardware_profile_from_context
+from tao_swarm.agents.system_check_agent import SystemCheckAgent
+from tao_swarm.orchestrator import AgentContext
 
 # ---------------------------------------------------------------------------
 # Helpers

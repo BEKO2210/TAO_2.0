@@ -36,7 +36,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts._bench import Benchmark, dump_results, format_results_path, print_table  # noqa: E402
-from src.orchestrator.approval_gate import ApprovalGate  # noqa: E402
+from tao_swarm.orchestrator.approval_gate import ApprovalGate  # noqa: E402
 
 logging.disable(logging.CRITICAL)
 

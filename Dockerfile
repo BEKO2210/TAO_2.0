@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 # STAGE 1: Basis-Image mit Python
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim AS base
+FROM python:3.10-slim AS base
 
 # System-Abhaengigkeiten
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,7 +39,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM dependencies AS production
 
 # Anwendungscode kopieren
-COPY src/ ./src/
+COPY tao_swarm/ ./tao_swarm/
 COPY config/ ./config/
 COPY scripts/ ./scripts/
 COPY KIMI.md ./
@@ -60,7 +60,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 EXPOSE 8080
 
 # Start-Kommando
-CMD ["python", "-m", "src.orchestrator", "--mode", "daemon"]
+CMD ["python", "-m", "tao_swarm.cli.tao_swarm", "run"]
 
 # ---------------------------------------------------------------------------
 # STAGE 4: Dashboard-Image (optional)
@@ -78,4 +78,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
 # Start-Kommando fuer Dashboard
-CMD ["python", "-m", "streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["python", "-m", "streamlit", "run", "tao_swarm/dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]

@@ -37,14 +37,23 @@ from scripts._bench import Benchmark, dump_results, format_results_path, print_t
 
 logging.disable(logging.CRITICAL)
 
-from src.orchestrator import SwarmOrchestrator  # noqa: E402
-from src.agents import (  # noqa: E402
-    SystemCheckAgent, ProtocolResearchAgent, SubnetDiscoveryAgent,
-    SubnetScoringAgent, WalletWatchAgent, MarketTradeAgent,
-    RiskSecurityAgent, MinerEngineeringAgent, ValidatorEngineeringAgent,
-    InfraDevopsAgent, DashboardDesignAgent, FullstackDevAgent,
-    QATestAgent, DocumentationAgent,
+from tao_swarm.agents import (  # noqa: E402
+    DashboardDesignAgent,
+    DocumentationAgent,
+    FullstackDevAgent,
+    InfraDevopsAgent,
+    MarketTradeAgent,
+    MinerEngineeringAgent,
+    ProtocolResearchAgent,
+    QATestAgent,
+    RiskSecurityAgent,
+    SubnetDiscoveryAgent,
+    SubnetScoringAgent,
+    SystemCheckAgent,
+    ValidatorEngineeringAgent,
+    WalletWatchAgent,
 )
+from tao_swarm.orchestrator import SwarmOrchestrator  # noqa: E402
 
 
 def _build_orchestrator() -> SwarmOrchestrator:

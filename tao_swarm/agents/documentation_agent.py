@@ -439,14 +439,14 @@ current system state. Generates documentation status reports
             from importlib import import_module
             from pathlib import Path
 
-            from src import agents as _agents_pkg
+            from tao_swarm import agents as _agents_pkg
 
             names: list[str] = []
             agents_dir = Path(_agents_pkg.__file__).parent
             for path in sorted(agents_dir.glob("*_agent.py")):
                 if path.name.startswith("_"):
                     continue
-                module = import_module(f"src.agents.{path.stem}")
+                module = import_module(f"tao_swarm.agents.{path.stem}")
                 name = getattr(module, "AGENT_NAME", None)
                 if isinstance(name, str) and name:
                     names.append(name)

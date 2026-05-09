@@ -344,7 +344,7 @@ class MarketTradeAgent:
         the collector's transitive deps (``requests`` + sqlite cache).
         """
         if self._market_collector is None:
-            from src.collectors.market_data import MarketDataCollector
+            from tao_swarm.collectors.market_data import MarketDataCollector
             self._market_collector = MarketDataCollector({
                 "use_mock_data": self._use_mock,
                 "db_path": self.config.get(

@@ -28,7 +28,6 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -36,14 +35,23 @@ from scripts._bench import Benchmark, dump_results, format_results_path, print_t
 
 logging.disable(logging.CRITICAL)
 
-from src.agents import (  # noqa: E402
-    SystemCheckAgent, ProtocolResearchAgent, SubnetDiscoveryAgent,
-    SubnetScoringAgent, WalletWatchAgent, MarketTradeAgent,
-    RiskSecurityAgent, MinerEngineeringAgent, ValidatorEngineeringAgent,
-    TrainingExperimentAgent, InfraDevopsAgent, DashboardDesignAgent,
-    FullstackDevAgent, QATestAgent, DocumentationAgent,
+from tao_swarm.agents import (  # noqa: E402
+    DashboardDesignAgent,
+    DocumentationAgent,
+    FullstackDevAgent,
+    InfraDevopsAgent,
+    MarketTradeAgent,
+    MinerEngineeringAgent,
+    ProtocolResearchAgent,
+    QATestAgent,
+    RiskSecurityAgent,
+    SubnetDiscoveryAgent,
+    SubnetScoringAgent,
+    SystemCheckAgent,
+    TrainingExperimentAgent,
+    ValidatorEngineeringAgent,
+    WalletWatchAgent,
 )
-
 
 # Realistic burst sizes (single CLI invocations, not microbenchmark loops).
 WARM_REPEATS = 20

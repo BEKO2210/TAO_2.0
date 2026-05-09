@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.orchestrator import SwarmOrchestrator
+from tao_swarm.orchestrator import SwarmOrchestrator
 
 # ---------------------------------------------------------------------------
 # Bug A — module-level AGENT_NAME / AGENT_VERSION must be discovered
@@ -86,7 +86,7 @@ def test_register_agent_without_any_name_raises():
 
 def test_real_agents_can_be_registered():
     """All 15 production agents must be registerable without patching."""
-    from src.agents import (
+    from tao_swarm.agents import (
         SubnetScoringAgent,
         SystemCheckAgent,
         WalletWatchAgent,
@@ -125,7 +125,7 @@ def test_danger_task_is_blocked_even_without_route(task_type: str):
 
 def test_safe_task_still_routes_and_executes():
     """Refactor must not break the happy path."""
-    from src.agents import SystemCheckAgent
+    from tao_swarm.agents import SystemCheckAgent
 
     orch = SwarmOrchestrator({"use_mock_data": True})
     orch.register_agent(SystemCheckAgent({"use_mock_data": True}))

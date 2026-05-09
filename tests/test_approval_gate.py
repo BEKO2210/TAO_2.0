@@ -14,7 +14,7 @@ Tests cover:
 
 import pytest
 
-from src.orchestrator.approval_gate import ApprovalGate
+from tao_swarm.orchestrator.approval_gate import ApprovalGate
 
 # ---------------------------------------------------------------------------
 # Fixtures

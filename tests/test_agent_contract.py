@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agents import (
+from tao_swarm.agents import (
     DashboardDesignAgent,
     DocumentationAgent,
     FullstackDevAgent,

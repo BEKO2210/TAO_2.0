@@ -12,12 +12,12 @@ Two layers:
 
 from __future__ import annotations
 
-from src.agents import (
+from tao_swarm.agents import (
     MinerEngineeringAgent,
     SystemCheckAgent,
     WalletWatchAgent,
 )
-from src.orchestrator import AgentContext, SwarmOrchestrator
+from tao_swarm.orchestrator import AgentContext, SwarmOrchestrator
 
 # ---------------------------------------------------------------------------
 # Unit-level: AgentContext
