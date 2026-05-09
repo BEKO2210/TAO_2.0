@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from src.orchestrator.approval_gate import ApprovalGate
+from src.orchestrator.context import AgentContext
 from src.orchestrator.task_router import TaskRouter
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ class SwarmOrchestrator:
         self.task_router: TaskRouter = TaskRouter()
         self.agents: dict[str, Any] = {}
         self.run_log: list[dict] = []
+        self.context: AgentContext = AgentContext()
         self._safety_override: bool = config.get("safety_override", False)
         self._start_time: float = time.time()
 
@@ -80,6 +82,15 @@ class SwarmOrchestrator:
 
         self.agents[agent_name] = agent_instance
         self.task_router.register_agent(agent_name, agent_instance)
+
+        # Pull-based context bus: hand the agent a reference to the shared
+        # context so it can opt-in by reading from it. Agents that don't
+        # use ``self.context`` never have to know it exists. We don't
+        # overwrite if the agent (or its config) already set one — even
+        # if that pre-set context happens to be empty (so ``is None`` is
+        # the right check, not a truthiness check).
+        if getattr(agent_instance, "context", None) is None:
+            agent_instance.context = self.context
 
         logger.info(
             "Agent registered: %s v%s (%s)",
@@ -228,6 +239,14 @@ class SwarmOrchestrator:
                 output.get("status") if isinstance(output, dict) else None
             )
 
+            # Pull-based context bus: publish the agent's output under the
+            # agent's name so a later agent can read it via
+            # ``self.context.get("system_check_agent.hardware_report")``.
+            # Failed runs (status == "error") are skipped so consumers
+            # don't pick up a stale or partial report.
+            if isinstance(output, dict) and agent_result_status != "error":
+                self.context.publish(agent_name, output)
+
             result = {
                 "status": "success",
                 "task_type": task_type,
@@ -361,6 +380,17 @@ class SwarmOrchestrator:
             "summary": summary,
             "next_actions": self.get_next_actions(results),
         }
+
+    def reset_context(self) -> None:
+        """
+        Wipe the shared agent context bus.
+
+        Use this between independent runs so a later agent doesn't pick
+        up a stale report from a previous run. Does not affect the
+        ``run_log`` or registered agents.
+        """
+        self.context.reset()
+        self._log_event(event_type="context_reset")
 
     def get_summary(self) -> dict:
         """
