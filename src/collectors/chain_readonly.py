@@ -349,6 +349,12 @@ class ChainReadOnlyCollector(BaseCollector):
         """
         Pull subnet identifiers from the live chain via bittensor SDK.
 
+        Prefers the rich ``all_subnets()`` path (v10+) which returns
+        ``DynamicInfo`` objects with ``netuid``, ``subnet_name``,
+        ``owner_coldkey``, and a nested ``subnet_identity`` carrying
+        github_repo / description / discord / contact. Falls back to
+        the netuid-only list for older SDKs.
+
         Uses *only* read methods on the subtensor; this collector
         never instantiates a wallet or signs anything (enforced by
         ``_WRITE_METHODS_DENYLIST`` + the corresponding test). If a
@@ -357,8 +363,63 @@ class ChainReadOnlyCollector(BaseCollector):
         rather than silently masking real chain issues as fake data.
         """
         with self._with_subtensor(bt) as sub:
+            rich = self._call_all_subnets_rich(sub)
+            if rich is not None:
+                return [self._dynamic_info_to_dict(s) for s in rich]
             netuids = self._call_subnets(sub)
         return [{"netuid": int(n), "name": f"subnet_{int(n)}"} for n in netuids]
+
+    @staticmethod
+    def _dynamic_info_to_dict(info: Any) -> dict:
+        """
+        Translate a ``bittensor.DynamicInfo`` (or compatible object)
+        into a plain dict the rest of the swarm can JSON-serialise.
+
+        Pulls the human-readable identity fields out of the nested
+        ``subnet_identity`` so consumers can flat-access them.
+        """
+        identity = getattr(info, "subnet_identity", None) or None
+
+        def _get(name: str, default: Any = None) -> Any:
+            value = getattr(info, name, default)
+            # Bittensor returns custom Balance objects for τ amounts;
+            # normalise to float when possible so SQLite/json works.
+            try:
+                f = float(value)
+                # Reject NaN / inf to keep downstream consumers honest.
+                if f != f or f in (float("inf"), float("-inf")):
+                    return default
+                return f
+            except (TypeError, ValueError):
+                return value
+
+        result: dict[str, Any] = {
+            "netuid": int(getattr(info, "netuid", 0)),
+            "name": getattr(info, "subnet_name", None) or f"subnet_{getattr(info, 'netuid', 0)}",
+            "owner": getattr(info, "owner_coldkey", None),
+            "owner_hotkey": getattr(info, "owner_hotkey", None),
+            "symbol": getattr(info, "symbol", None),
+            "tempo": _get("tempo", 0),
+            "emission": _get("emission", 0),
+            "is_dynamic": bool(getattr(info, "is_dynamic", False)),
+            "network_registered_at": _get("network_registered_at", 0),
+            "price": _get("price", 0),
+            "alpha_in": _get("alpha_in", 0),
+            "alpha_out": _get("alpha_out", 0),
+            "tao_in": _get("tao_in", 0),
+            "subnet_volume": _get("subnet_volume", 0),
+        }
+        if identity is not None:
+            result["identity"] = {
+                "name": getattr(identity, "subnet_name", None),
+                "description": getattr(identity, "description", None),
+                "github_repo": getattr(identity, "github_repo", None),
+                "subnet_url": getattr(identity, "subnet_url", None),
+                "logo_url": getattr(identity, "logo_url", None),
+                "discord": getattr(identity, "discord", None),
+                "contact": getattr(identity, "subnet_contact", None),
+            }
+        return result
 
     def _live_metagraph(self, bt: Any, netuid: int, lite: bool = True) -> dict:
         """
@@ -461,21 +522,73 @@ class ChainReadOnlyCollector(BaseCollector):
     @staticmethod
     def _call_subnets(sub: Any) -> list[int]:
         """
-        Try v10's ``get_all_subnets_netuid`` first, then fall through to
-        legacy method names. Raises if no compatible reader is present
-        — never silently returns an empty list (that would look like a
-        successful read of zero subnets, which is meaningfully wrong).
+        Resolve the netuid list across SDK versions.
+
+        Bittensor 10.x's ``SubtensorApi`` namespaces subnet methods
+        under ``api.subnets``; the legacy ``Subtensor`` class exposes
+        them at the top level. We probe both shapes and the historic
+        method names so this collector works against:
+
+        - v10+ ``SubtensorApi``: ``api.subnets.get_all_subnets_netuid()``
+          or ``api.subnets.all_subnets()`` (returns rich DynamicInfo)
+        - v10  ``Subtensor``:    ``sub.get_all_subnets_netuid()``
+        - v9   legacy:           ``sub.get_subnets()`` /
+                                 ``sub.get_all_subnet_netuids()``
+
+        Raises if no compatible reader is present — never silently
+        returns an empty list (which would look like a successful
+        read of zero subnets, meaningfully wrong).
         """
-        for name in ("get_all_subnets_netuid", "get_subnets",
-                     "get_all_subnet_netuids"):
-            method = getattr(sub, name, None)
-            if callable(method):
-                return list(method())
+        candidates = []
+        # SubtensorApi puts subnet methods on a sub-namespace.
+        ns = getattr(sub, "subnets", None)
+        if ns is not None and not callable(ns):
+            candidates.append(ns)
+        candidates.append(sub)
+
+        for owner in candidates:
+            for name in (
+                "get_all_subnets_netuid",  # v10
+                "get_subnets",              # v9 legacy
+                "get_all_subnet_netuids",   # very old typo variant
+            ):
+                method = getattr(owner, name, None)
+                if callable(method):
+                    return [int(x) for x in method()]
+            # ``all_subnets()`` returns rich DynamicInfo — extract netuid.
+            rich = getattr(owner, "all_subnets", None)
+            if callable(rich):
+                return [int(getattr(s, "netuid", -1)) for s in rich()
+                        if getattr(s, "netuid", -1) >= 0]
         raise RuntimeError(
             "bittensor subtensor exposes none of "
             "get_all_subnets_netuid / get_subnets / get_all_subnet_netuids "
-            "— incompatible SDK version"
+            "/ all_subnets — incompatible SDK version"
         )
+
+    @staticmethod
+    def _call_all_subnets_rich(sub: Any) -> list[Any] | None:
+        """
+        Try to fetch the rich subnet list (``DynamicInfo`` objects with
+        owner / subnet_name / subnet_identity / economic fields).
+
+        Returns the list if available, ``None`` if the SDK version
+        doesn't expose it. Falls back to the netuid-only path so we
+        always have something to return.
+        """
+        ns = getattr(sub, "subnets", None)
+        if ns is not None and not callable(ns):
+            owner = ns
+        else:
+            owner = sub
+        rich = getattr(owner, "all_subnets", None)
+        if callable(rich):
+            try:
+                return list(rich())
+            except Exception as exc:  # pragma: no cover - SDK runtime guard
+                logger.debug("all_subnets() raised: %s", exc)
+                return None
+        return None
 
     def _get_subtensor(self, bt: Any) -> Any:
         """
