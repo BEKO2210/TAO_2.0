@@ -1041,6 +1041,558 @@ def version(ctx):
     click.echo()
 
 
+# ── keystore: encrypted hot-key management ────────────────────────────────
+
+@cli.group()
+@click.pass_context
+def keystore(ctx):
+    """Manage the encrypted hot-key keystore (Argon2id + AES-256-GCM)."""
+
+
+@keystore.command("init")
+@click.option(
+    "--path", "path_",
+    type=click.Path(dir_okay=False, path_type=Path),
+    required=True,
+    help="Where to write the encrypted keystore file (chmod 0o600).",
+)
+@click.option(
+    "--label",
+    default="",
+    help="Optional human-readable label stored in the file metadata.",
+)
+@click.option(
+    "--seed-hex",
+    default=None,
+    help=(
+        "Raw seed bytes as hex (with or without 0x prefix). If omitted "
+        "you will be prompted; the value is read from a hidden TTY "
+        "input and never echoed."
+    ),
+)
+@click.option(
+    "--overwrite", is_flag=True,
+    help="Replace an existing keystore at the same path.",
+)
+def keystore_init(path_, label, seed_hex, overwrite):
+    """Create a new encrypted keystore.
+
+    The seed never touches disk in plaintext; it goes straight into
+    Argon2id-derived AES-256-GCM ciphertext. The password is read
+    twice from a hidden prompt and confirmed before any I/O happens.
+    """
+    from tao_swarm.trading import Keystore, KeystoreError
+
+    click.echo(click.style(
+        "\n!! AUTO_TRADING keystore — read this before continuing.", fg="yellow", bold=True,
+    ))
+    click.echo("   - Use a DEDICATED trading key, never your main coldkey.")
+    click.echo("   - Fund it only with the cap amount you can afford to lose.")
+    click.echo("   - Loss of the password = loss of the keystore. There is no recovery.")
+    click.echo()
+
+    if seed_hex is None:
+        seed_hex = click.prompt(
+            "Seed (hex, hidden)", hide_input=True, confirmation_prompt=True,
+        )
+    seed_hex = seed_hex.strip()
+    if seed_hex.startswith("0x") or seed_hex.startswith("0X"):
+        seed_hex = seed_hex[2:]
+    try:
+        seed = bytes.fromhex(seed_hex)
+    except ValueError:
+        raise click.ClickException("seed-hex must be a valid hex string")
+    if not seed:
+        raise click.ClickException("seed cannot be empty")
+
+    password = click.prompt(
+        "Keystore password (hidden, min 8 chars)",
+        hide_input=True, confirmation_prompt=True,
+    )
+    try:
+        info = Keystore.init(
+            path_, password, seed, label=label, overwrite=overwrite,
+        )
+    except KeystoreError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(click.style(
+        f"\n  Keystore written: {path_}", fg="green",
+    ))
+    click.echo(f"    label:       {info.label!r}")
+    click.echo(f"    created_at:  {info.created_at:.0f}")
+    click.echo(f"    kdf_params:  {info.kdf_params}")
+    click.echo()
+
+
+@keystore.command("info")
+@click.option(
+    "--path", "path_",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    required=True,
+)
+def keystore_info(path_):
+    """Show non-secret metadata about a keystore file (no password needed)."""
+    from tao_swarm.trading import Keystore, KeystoreError
+
+    try:
+        info = Keystore.info(path_)
+    except KeystoreError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(click.style(f"\n  Keystore: {path_}", fg="blue", bold=True))
+    click.echo(f"    version:     {info.version}")
+    click.echo(f"    label:       {info.label!r}")
+    click.echo(f"    created_at:  {info.created_at:.0f}")
+    click.echo(f"    kdf:         {info.kdf}")
+    click.echo(f"    kdf_params:  {info.kdf_params}")
+    click.echo()
+
+
+@keystore.command("verify")
+@click.option(
+    "--path", "path_",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    required=True,
+)
+def keystore_verify(path_):
+    """Prompt for the password and confirm decryption succeeds.
+
+    The decrypted seed is held in memory only for the duration of
+    this command and is wiped on exit. Useful for confirming you
+    still know the password without running the trader.
+    """
+    from tao_swarm.trading import Keystore, KeystoreError, WrongPasswordError
+
+    password = click.prompt("Keystore password (hidden)", hide_input=True)
+    try:
+        with Keystore.unlock(path_, password) as handle:
+            click.echo(click.style(
+                f"\n  OK — keystore unlocked (label={handle.label!r}).",
+                fg="green",
+            ))
+    except WrongPasswordError:
+        raise click.ClickException("wrong password")
+    except KeystoreError as exc:
+        raise click.ClickException(str(exc))
+    click.echo()
+
+
+# ── trade: backtest + live runner ─────────────────────────────────────────
+
+@cli.group()
+@click.pass_context
+def trade(ctx):
+    """Run trading strategies — paper-default, live behind explicit gates."""
+
+
+_BUILTIN_STRATEGIES = ("momentum_rotation",)
+
+
+def _load_strategy(name: str, **kwargs):
+    """Load a built-in strategy by short name."""
+    from tao_swarm.trading.strategies.momentum_rotation import (
+        MomentumRotationStrategy,
+    )
+
+    if name == "momentum_rotation":
+        return MomentumRotationStrategy(**kwargs)
+    raise click.ClickException(
+        f"unknown strategy {name!r}; built-ins: {_BUILTIN_STRATEGIES}"
+    )
+
+
+@trade.command("backtest")
+@click.option(
+    "--strategy", "strategy_name",
+    type=click.Choice(list(_BUILTIN_STRATEGIES)),
+    required=True,
+)
+@click.option(
+    "--snapshots",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    required=True,
+    help="Path to a JSON file with a list of market_state snapshots.",
+)
+@click.option(
+    "--threshold-pct", default=0.05, type=float, show_default=True,
+    help="Strategy momentum threshold (e.g. 0.05 = 5%).",
+)
+@click.option(
+    "--slot-size-tao", default=1.0, type=float, show_default=True,
+)
+@click.option(
+    "--db",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="SQLite path for the paper ledger; defaults to a tmp file.",
+)
+@click.option(
+    "--json", "json_output", is_flag=True,
+    help="Print the backtest result as JSON.",
+)
+def trade_backtest(
+    strategy_name, snapshots, threshold_pct, slot_size_tao, db, json_output,
+):
+    """Run a deterministic backtest from a JSON snapshot file."""
+    from tao_swarm.trading import Backtester
+
+    try:
+        with snapshots.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise click.ClickException(f"failed to read snapshots: {exc}")
+    if not isinstance(data, list):
+        raise click.ClickException("snapshots file must contain a JSON list")
+
+    strat = _load_strategy(
+        strategy_name,
+        threshold_pct=threshold_pct, slot_size_tao=slot_size_tao,
+    )
+    bt = Backtester(strat, paper_db_path=str(db) if db else ":memory:")
+    result = bt.run(data)
+    if json_output:
+        click.echo(json.dumps(result.as_dict(), indent=2))
+        return
+    d = result.as_dict()
+    click.echo(click.style(
+        f"\n  Backtest — {d['strategy_name']}", fg="blue", bold=True,
+    ))
+    click.echo(f"    steps:        {d['num_steps']}")
+    click.echo(f"    proposals:    {d['num_proposals']}")
+    click.echo(f"    executed:     {d['num_executed']}")
+    click.echo(f"    refused:      {d['num_refused']}")
+    click.echo(f"    total_pnl:    {d['total_pnl_tao']:+.4f} TAO")
+    click.echo(f"    win_rate:     {d['win_rate']:.2%}")
+    click.echo(f"    max_drawdown: {d['max_drawdown_tao']:.4f} TAO")
+    click.echo(f"    sharpe:       {d['sharpe_ratio']:.4f}")
+    if d["refusals"]:
+        click.echo("    refusals (unique reasons):")
+        for r in d["refusals"]:
+            click.echo(f"      - {r}")
+    click.echo()
+
+
+def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
+    """Interactive triple-check before the runner is started in live mode.
+
+    Returns ``True`` only when the operator types "I UNDERSTAND" and
+    every authorisation gate is green. Prints a summary either way.
+    """
+    from tao_swarm.trading import LIVE_TRADING_ENV
+
+    click.echo(click.style(
+        "\n!! LIVE TRADING — final confirmation",
+        fg="red", bold=True,
+    ))
+    click.echo("   Strategy:        {}".format(strategy_meta.name))
+    click.echo("   live_trading:    {}".format(strategy_meta.live_trading))
+    click.echo("   max_position:    {} TAO".format(strategy_meta.max_position_tao))
+    click.echo("   max_daily_loss:  {} TAO".format(strategy_meta.max_daily_loss_tao))
+    click.echo("   keystore:        {}".format(keystore_path))
+    click.echo("   {} = {!r}".format(
+        LIVE_TRADING_ENV, env.get(LIVE_TRADING_ENV),
+    ))
+    click.echo()
+    click.echo("   This will sign and broadcast real Bittensor extrinsics.")
+    click.echo("   Type exactly 'I UNDERSTAND' to proceed (anything else aborts):")
+    answer = click.prompt("   > ", default="", show_default=False)
+    return answer.strip() == "I UNDERSTAND"
+
+
+@trade.command("run")
+@click.option(
+    "--strategy", "strategy_name",
+    type=click.Choice(list(_BUILTIN_STRATEGIES)),
+    required=True,
+)
+@click.option(
+    "--paper/--live", "paper", default=True,
+    help="Paper-trade the strategy (default) or attempt live signing.",
+)
+@click.option(
+    "--keystore-path",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    default=None,
+    help="Required for --live. Operator will be prompted for the password.",
+)
+@click.option(
+    "--threshold-pct", default=0.05, type=float, show_default=True,
+)
+@click.option(
+    "--slot-size-tao", default=1.0, type=float, show_default=True,
+)
+@click.option(
+    "--max-position-tao", default=1.0, type=float, show_default=True,
+)
+@click.option(
+    "--max-daily-loss-tao", default=5.0, type=float, show_default=True,
+)
+@click.option(
+    "--max-total-tao", default=10.0, type=float, show_default=True,
+    help="Operator-level total exposure cap across all positions.",
+)
+@click.option(
+    "--tick-interval-s", default=60.0, type=float, show_default=True,
+)
+@click.option(
+    "--max-ticks", default=None, type=int,
+    help="Stop after this many ticks (default: run until Ctrl-C).",
+)
+@click.option(
+    "--ledger-db",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=Path("data") / "trades.db",
+    show_default=True,
+)
+@click.option(
+    "--kill-switch-path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=Path("data") / ".kill",
+    show_default=True,
+    help="Touch this file to halt trading at the next tick.",
+)
+@click.option(
+    "--watchlist", default=None,
+    help="Comma-separated netuids the strategy is allowed to trade.",
+)
+@click.option(
+    "--live-trading", is_flag=True,
+    help=(
+        "Set StrategyMeta.live_trading=True. Required (along with "
+        f"{'TAO_LIVE_TRADING'}=1 and --keystore-path) for live execution."
+    ),
+)
+@click.option(
+    "--yes-i-understand", is_flag=True,
+    help=(
+        "Skip the interactive 'I UNDERSTAND' confirmation. Intended "
+        "for non-interactive deployments where the gate is already "
+        "enforced by an external orchestrator."
+    ),
+)
+@click.pass_context
+def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
+    ctx, strategy_name, paper, keystore_path,
+    threshold_pct, slot_size_tao, max_position_tao, max_daily_loss_tao,
+    max_total_tao, tick_interval_s, max_ticks, ledger_db, kill_switch_path,
+    watchlist, live_trading, yes_i_understand,
+):
+    """Run a strategy live or in paper mode against the read-only collectors."""
+    from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
+    from tao_swarm.trading import (
+        BittensorSigner,
+        DailyLossLimit,
+        Executor,
+        Keystore,
+        KeystoreError,
+        KillSwitch,
+        PaperLedger,
+        PositionCap,
+        TradingRunner,
+        WalletMode,
+        WrongPasswordError,
+    )
+
+    config = ctx.obj["config"]
+    click.echo(_mode_banner(config))
+
+    # 1. Build strategy.
+    watch = None
+    if watchlist:
+        try:
+            watch = [int(n.strip()) for n in watchlist.split(",") if n.strip()]
+        except ValueError:
+            raise click.ClickException("watchlist must be comma-separated integers")
+    strat = _load_strategy(
+        strategy_name,
+        threshold_pct=threshold_pct,
+        slot_size_tao=slot_size_tao,
+        max_position_tao=max_position_tao,
+        max_daily_loss_tao=max_daily_loss_tao,
+        watchlist=watch,
+    )
+    meta = strat.meta()
+
+    # Force the live-trading flag onto a fresh meta if --live-trading was
+    # passed. The strategy's own meta() may default to False; this is the
+    # operator's per-run override.
+    if live_trading:
+        # The momentum strategy returns a fresh meta() each call, so we
+        # patch the class attribute by wrapping the meta method.
+        original_meta = strat.meta
+
+        def patched_meta(_orig=original_meta):
+            base = _orig()
+            return base.__class__(
+                name=base.name, version=base.version,
+                max_position_tao=base.max_position_tao,
+                max_daily_loss_tao=base.max_daily_loss_tao,
+                description=base.description,
+                actions_used=base.actions_used,
+                live_trading=True,
+            )
+
+        strat.meta = patched_meta  # type: ignore[method-assign]
+        meta = strat.meta()
+
+    # 2. Build executor + guards + ledger.
+    Path(ledger_db).parent.mkdir(parents=True, exist_ok=True)
+    ledger = PaperLedger(str(ledger_db))
+    kill = KillSwitch(flag_path=str(kill_switch_path))
+    cap = PositionCap(
+        max_per_position_tao=max_position_tao,
+        max_total_tao=max_total_tao,
+    )
+    loss = DailyLossLimit(
+        max_daily_loss_tao=max_daily_loss_tao, ledger=ledger,
+    )
+
+    # 3. Live-mode prerequisites.
+    signer_factory = None
+    handle = None
+    if not paper:
+        if keystore_path is None:
+            raise click.ClickException("--live requires --keystore-path")
+        if not live_trading:
+            raise click.ClickException(
+                "--live requires --live-trading (per-strategy opt-in)"
+            )
+        if os.environ.get("TAO_LIVE_TRADING") != "1":
+            raise click.ClickException(
+                "--live requires TAO_LIVE_TRADING=1 in the environment"
+            )
+        password = click.prompt("Keystore password (hidden)", hide_input=True)
+        try:
+            handle = Keystore.unlock(keystore_path, password)
+        except WrongPasswordError:
+            raise click.ClickException("wrong password")
+        except KeystoreError as exc:
+            raise click.ClickException(str(exc))
+
+        if not yes_i_understand:
+            ok = _confirm_live_walkthrough(
+                strategy_meta=meta, keystore_path=keystore_path,
+                env=os.environ,
+            )
+            if not ok:
+                handle.close()
+                click.echo(click.style(
+                    "  Aborted — confirmation phrase not entered exactly.",
+                    fg="yellow",
+                ))
+                return
+
+        network_for_live = (
+            config.get("network") if config.get("network") in ("finney", "test")
+            else "finney"
+        )
+
+        def signer_factory_inner():  # noqa: D401 - factory closure
+            return BittensorSigner(handle, network=network_for_live)
+
+        signer_factory = signer_factory_inner
+
+    executor = Executor(
+        mode=WalletMode.AUTO_TRADING if not paper else WalletMode.WATCH_ONLY,
+        kill_switch=kill,
+        position_cap=cap,
+        daily_loss_limit=loss,
+        ledger=ledger,
+        signer_factory=signer_factory,
+    )
+
+    # 4. Snapshot function.
+    chain = ChainReadOnlyCollector(config=config)
+
+    def snapshot_fn():
+        return chain.get_subnet_list()
+
+    runner = TradingRunner(
+        strategy=strat,
+        executor=executor,
+        snapshot_fn=snapshot_fn,
+        paper=paper,
+        tick_interval_s=tick_interval_s,
+    )
+
+    click.echo(click.style(
+        f"\n  Starting runner — strategy={strategy_name}, paper={paper}, "
+        f"interval={tick_interval_s}s",
+        fg="blue", bold=True,
+    ))
+    click.echo("  Press Ctrl-C to stop. Touch {} to halt at next tick.".format(
+        kill_switch_path,
+    ))
+
+    try:
+        runner.run_forever(max_ticks=max_ticks)
+    except KeyboardInterrupt:
+        runner.stop()
+        click.echo(click.style("\n  Interrupted — stopping cleanly.", fg="yellow"))
+    finally:
+        if handle is not None:
+            handle.close()
+
+    s = runner.status()
+    click.echo()
+    click.echo(click.style(
+        f"  Runner stopped: {s.state} (halted_reason={s.halted_reason!r})",
+        fg="green" if s.state != "halted" else "red",
+    ))
+    click.echo(f"    ticks:     {s.ticks}")
+    click.echo(f"    proposals: {s.proposals}")
+    click.echo(f"    executed:  {s.executed}")
+    click.echo(f"    refused:   {s.refused}")
+    click.echo(f"    errors:    {s.errors}")
+    click.echo()
+
+
+@trade.command("status")
+@click.option(
+    "--ledger-db",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    default=Path("data") / "trades.db",
+    show_default=True,
+)
+@click.option(
+    "--strategy", "strategy_name", default=None,
+    help="Filter by strategy name (default: all).",
+)
+@click.option(
+    "--limit", default=20, type=int, show_default=True,
+)
+def trade_status(ledger_db, strategy_name, limit):
+    """Summarise the trade ledger — recent trades, totals, P&L."""
+    from tao_swarm.trading import PaperLedger
+
+    ledger = PaperLedger(str(ledger_db))
+    rows = ledger.list_trades(strategy=strategy_name, limit=limit)
+    pnl = ledger.realised_pnl(strategy=strategy_name)
+    paper_count = sum(1 for r in rows if r.paper)
+    live_count = sum(1 for r in rows if not r.paper)
+    failed = sum(1 for r in rows if r.action.endswith("_failed"))
+    click.echo(click.style(
+        f"\n  Ledger: {ledger_db} (strategy={strategy_name or 'ALL'})",
+        fg="blue", bold=True,
+    ))
+    click.echo(f"    total realised P&L: {pnl:+.4f} TAO")
+    click.echo(f"    rows shown:         {len(rows)} (paper={paper_count} live={live_count} failed={failed})")
+    if not rows:
+        click.echo("    (no trades)")
+        click.echo()
+        return
+    click.echo()
+    click.echo(f"    {'time':19s}  {'strategy':18s}  {'action':18s}  {'amount':>10s}  {'price':>10s}  {'pnl':>10s}  paper")
+    click.echo(f"    {'-'*19}  {'-'*18}  {'-'*18}  {'-'*10}  {'-'*10}  {'-'*10}  -----")
+    for r in rows:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(r.timestamp))
+        click.echo(
+            f"    {ts}  {r.strategy[:18]:18s}  {r.action[:18]:18s}  "
+            f"{r.amount_tao:>10.4f}  {r.price_tao:>10.4f}  "
+            f"{r.realised_pnl_tao:>+10.4f}  {str(r.paper):5s}"
+        )
+    click.echo()
+
+
 # ── Entry point ───────────────────────────────────────────────────────────
 
 def main_entry():
