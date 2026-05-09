@@ -257,6 +257,15 @@ docs/_build/
 docs/_static/
 docs/_templates/
 
+# ---------------------------------------------------------------------------
+# Benchmark output (per-run JSON snapshots + scratch caches)
+# Commit selected baselines manually with `git add -f` if you want them
+# tracked; the dir contents are otherwise generated artefacts.
+# ---------------------------------------------------------------------------
+bench/results/*
+!bench/results/.gitkeep
+bench/_cache/
+
 # =============================================================================
 # WICHTIG: WENN DU EINE DATEI HINZUFUEGEN MUSST, DIE HIER AUSGESCHLOSSEN IST,
 # BENUTZE "git add -f <datei>" ODER PASSE DIESE DATEI AN.
