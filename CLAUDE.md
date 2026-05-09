@@ -97,8 +97,8 @@ Users add their own agents via
 Plug-ins must obey the SPEC.md agent contract (run / get_status /
 validate_input + AGENT_NAME / AGENT_VERSION) and are routed through
 the same `ApprovalGate` as built-ins — loading a plug-in does **not**
-raise its trust level. A worked example lives in
-`examples/subnet_repo_health/`; full guide in `docs/plugins.md`.
+raise its trust level. Full guide in `docs/plugins.md`; scaffold via
+`npx hygen plugin new`.
 
 Aliases: `npm run new:agent`, `npm run new:collector`, `npm run new:scoring`, `npm run new:test`, `npm run new:doc`.
 

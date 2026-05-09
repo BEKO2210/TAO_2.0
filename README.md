@@ -144,7 +144,7 @@ Der Orchestrator publiziert die Agent-Ausgabe nach jedem erfolgreichen Run unter
 
 ## Plug-ins (eigene Agenten)
 
-Du kannst eigene Agenten **außerhalb dieses Repos** schreiben und zur Laufzeit einklinken. Ein laufender Beispiel-Plug-in liegt in `examples/subnet_repo_health/` — er scort Subnet-GitHub-Repos auf Health (Recency, Stars, Engagement).
+Du kannst eigene Agenten **außerhalb dieses Repos** schreiben und zur Laufzeit einklinken. Volle Anleitung: `docs/plugins.md`.
 
 ### Schnellster Weg: drop-in
 
@@ -168,9 +168,9 @@ Oder programmatisch:
 from src.orchestrator import SwarmOrchestrator, load_plugins
 
 orch = SwarmOrchestrator({"use_mock_data": True})
-summary = load_plugins(orch, paths=["examples/subnet_repo_health"])
+summary = load_plugins(orch, paths=["/home/user/my-tao-plugins"])
 print(summary.as_dict())
-# → {"loaded": ["subnet_repo_health_agent"], "skipped": [], "errors": []}
+# → {"loaded": ["<your_agent>"], "skipped": [], "errors": []}
 ```
 
 ### Production-Weg: pip-installierbar
@@ -179,7 +179,7 @@ In deinem eigenen Repo (`pyproject.toml`):
 
 ```toml
 [project.entry-points."tao.agents"]
-subnet_repo_health = "my_plugins.subnet_repo_health_agent:SubnetRepoHealthAgent"
+my_agent = "my_plugins.my_agent:MyAgent"
 ```
 
 ```bash

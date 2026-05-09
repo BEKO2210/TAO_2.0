@@ -22,8 +22,6 @@ receive the shared ``AgentContext`` automatically (just like
 built-ins), so they can pull system_check reports etc. without
 extra wiring.
 
-A worked example ships in ``examples/subnet_repo_health/``.
-
 Usage
 -----
 
@@ -31,9 +29,9 @@ Path-based, programmatic::
 
     from src.orchestrator import SwarmOrchestrator, load_plugins
     orch = SwarmOrchestrator({"use_mock_data": True})
-    summary = load_plugins(orch, paths=["examples/subnet_repo_health"])
+    summary = load_plugins(orch, paths=["/home/user/my-agents"])
     print(summary)
-    # → {"loaded": ["subnet_repo_health_agent"], "skipped": [...], "errors": [...]}
+    # → {"loaded": ["<your_agent>"], "skipped": [...], "errors": [...]}
 
 Path-based, env var::
 
@@ -42,7 +40,7 @@ Path-based, env var::
 Entry-point-based (user's own ``pyproject.toml``)::
 
     [project.entry-points."tao.agents"]
-    subnet_repo_health = "subnet_repo_health_agent:SubnetRepoHealthAgent"
+    my_agent = "my_agents.my_agent:MyAgent"
 
 Then::
 
