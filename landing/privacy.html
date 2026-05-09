@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a12">
 <title>Datenschutz / Privacy — TAO Swarm</title>
 <meta name="robots" content="index, follow">
@@ -298,25 +298,6 @@
   <a href="index.html" class="legal-back">← Back to home</a>
 </main>
 
-<script>
-  // No-tracking JS — only switches sections in/out, no network.
-  (function () {
-    var de = document.getElementById("de-content");
-    var en = document.getElementById("en-content");
-    var tabDe = document.getElementById("tab-de");
-    var tabEn = document.getElementById("tab-en");
-    function show(lang) {
-      var isDe = lang === "de";
-      de.classList.toggle("active", isDe);
-      en.classList.toggle("active", !isDe);
-      tabDe.classList.toggle("active", isDe);
-      tabEn.classList.toggle("active", !isDe);
-    }
-    tabDe.addEventListener("click", function (e) { e.preventDefault(); show("de"); history.replaceState(null,"","#de"); });
-    tabEn.addEventListener("click", function (e) { e.preventDefault(); show("en"); history.replaceState(null,"","#en"); });
-    if (location.hash === "#en" || (navigator.language || "").slice(0,2) === "en") show("en");
-  })();
-</script>
-
+<script src="main.js" defer></script>
 </body>
 </html>

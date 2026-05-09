@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a12">
 <title>TAO Swarm — Local-first multi-agent intelligence for Bittensor</title>
 <meta name="description" content="A locally-run, read-only multi-agent system for researching Bittensor (TAO). 15 specialized agents, ApprovalGate safety, plug-in architecture. Source-available under BUSL-1.1.">
@@ -14,6 +14,8 @@
 </head>
 <body>
 <a href="#main" class="skip">Skip to content</a>
+
+<div class="progress" aria-hidden="true"><div class="progress-bar"></div></div>
 
 <header class="nav">
   <div class="nav-inner">
@@ -62,24 +64,24 @@
       <span class="badge">no telemetry</span>
     </div>
   </div>
-  <div class="hero-bg" aria-hidden="true"></div>
+  <div class="hero-bg" aria-hidden="true"><span></span></div>
 </section>
 
 <section id="what" class="section">
   <div class="section-inner">
-    <div class="section-head">
+    <div class="section-head reveal">
       <span class="kicker">What it is</span>
       <h2>A read-only research swarm.<br>Not a trading bot.</h2>
     </div>
     <div class="grid-3">
-      <div class="card">
+      <div class="card reveal delay-1">
         <div class="card-num">01</div>
         <h3>15 specialized agents</h3>
         <p>System check, protocol research, subnet discovery and scoring,
         watch-only wallet, market analysis, risk review, miner / validator
         engineering, training, infra, dashboard, fullstack, QA, docs.</p>
       </div>
-      <div class="card">
+      <div class="card reveal delay-2">
         <div class="card-num">02</div>
         <h3>Gate before route</h3>
         <p>Every action is classified <code>SAFE</code> / <code>CAUTION</code> /
@@ -87,7 +89,7 @@
         a plan only — execute_trade, sign_transaction, stake, unstake,
         swap_coldkey, reveal_seed are all blocked by construction.</p>
       </div>
-      <div class="card">
+      <div class="card reveal delay-3">
         <div class="card-num">03</div>
         <h3>Plug-in architecture</h3>
         <p>Drop your own <code>*_agent.py</code> in a folder, set
@@ -95,7 +97,7 @@
         the <code>tao.agents</code> entry point. Plug-ins go through the
         same gate as built-ins. No privilege escalation.</p>
       </div>
-      <div class="card">
+      <div class="card reveal delay-4">
         <div class="card-num">04</div>
         <h3>Wallet stays in your hands</h3>
         <p>Default mode is <code>NO_WALLET</code>.
@@ -104,7 +106,7 @@
         a device we never touch. The system never asks for, stores, or
         transmits seed phrases or private keys.</p>
       </div>
-      <div class="card">
+      <div class="card reveal delay-5">
         <div class="card-num">05</div>
         <h3>Live data, real fallbacks</h3>
         <p>Bittensor SDK 10.x against mainnet finney for 129+ subnets
@@ -113,7 +115,7 @@
         labelled <code>_meta.fallback_reason</code> when the upstream
         is unreachable — never silent.</p>
       </div>
-      <div class="card">
+      <div class="card reveal delay-6">
         <div class="card-num">06</div>
         <h3>Local-only, no telemetry</h3>
         <p>Everything runs on your machine. SQLite for state. No
@@ -127,12 +129,12 @@
 
 <section id="how" class="section section-alt">
   <div class="section-inner">
-    <div class="section-head">
+    <div class="section-head reveal">
       <span class="kicker">How it runs</span>
       <h2>Three commands.</h2>
     </div>
     <div class="steps">
-      <div class="step">
+      <div class="step reveal delay-1">
         <div class="step-num">1</div>
         <div class="step-body">
           <h3>Install</h3>
@@ -143,7 +145,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 pip install -e .</code></pre>
         </div>
       </div>
-      <div class="step">
+      <div class="step reveal delay-2">
         <div class="step-num">2</div>
         <div class="step-body">
           <h3>Run mock</h3>
@@ -153,7 +155,7 @@ tao-swarm risk --content "Schedule_coldkey_swap to 5XYZ..."
 # → DANGER: coldkey_swap_social_engineering CRITICAL</code></pre>
         </div>
       </div>
-      <div class="step">
+      <div class="step reveal delay-3">
         <div class="step-num">3</div>
         <div class="step-body">
           <h3>Go live</h3>
@@ -169,13 +171,13 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
 
 <section id="proof" class="section">
   <div class="section-inner">
-    <div class="section-head">
+    <div class="section-head reveal">
       <span class="kicker">Proof</span>
       <h2>It actually works.</h2>
       <p class="subhead">Verified end-to-end against real Mainnet, Subscan, and CoinGecko.</p>
     </div>
     <div class="grid-2">
-      <div class="terminal">
+      <div class="terminal reveal delay-1">
         <div class="term-bar"><span></span><span></span><span></span></div>
         <pre><code><span class="term-prompt">$</span> tao-swarm --live subnets --limit 5
 
@@ -192,7 +194,7 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
 
   Total: 129 subnets</code></pre>
       </div>
-      <div class="terminal">
+      <div class="terminal reveal delay-2">
         <div class="term-bar"><span></span><span></span><span></span></div>
         <pre><code><span class="term-prompt">$</span> tao-swarm --live run --task \
     '{"type": "execute_trade", "amount": 100}'
@@ -211,19 +213,19 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
       </div>
     </div>
     <div class="metrics">
-      <div class="metric">
+      <div class="metric reveal delay-1">
         <div class="metric-value">547</div>
         <div class="metric-label">tests passing on every commit</div>
       </div>
-      <div class="metric">
+      <div class="metric reveal delay-2">
         <div class="metric-value">10</div>
         <div class="metric-label">live smoke tests against real endpoints</div>
       </div>
-      <div class="metric">
+      <div class="metric reveal delay-3">
         <div class="metric-value">3.10 — 3.12</div>
         <div class="metric-label">Python versions covered in CI</div>
       </div>
-      <div class="metric">
+      <div class="metric reveal delay-4">
         <div class="metric-value">0</div>
         <div class="metric-label">automated value-moving actions, by design</div>
       </div>
@@ -233,12 +235,12 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
 
 <section id="license" class="section section-alt">
   <div class="section-inner">
-    <div class="section-head">
+    <div class="section-head reveal">
       <span class="kicker">License</span>
       <h2>Source-available, free for non-production.<br>Open Source on 2030-01-01.</h2>
     </div>
     <div class="grid-2">
-      <div class="lic-card lic-allowed">
+      <div class="reveal delay-1 lic-card lic-allowed">
         <h3>Free for Non-Production Use</h3>
         <ul>
           <li>Personal, educational, research, evaluation</li>
@@ -248,7 +250,7 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
           <li>Forking, modifying, and redistributing under the same terms</li>
         </ul>
       </div>
-      <div class="lic-card lic-denied">
+      <div class="reveal delay-2 lic-card lic-denied">
         <h3>Requires Commercial License</h3>
         <ul>
           <li>Hosting as a service for third parties</li>
@@ -259,7 +261,7 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
         </ul>
       </div>
     </div>
-    <div class="callout">
+    <div class="callout reveal">
       <strong>Change Date 2030-01-01.</strong>
       On that date the license auto-converts to <strong>Apache License 2.0</strong>.
       The Non-Production restriction lifts and the project becomes fully Open Source.
@@ -272,7 +274,7 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
 
 <section id="roadmap" class="section">
   <div class="section-inner">
-    <div class="section-head">
+    <div class="section-head reveal">
       <span class="kicker">Roadmap &amp; monetization</span>
       <h2>Honest plan. No tokens. No promises.</h2>
       <p class="subhead">
@@ -282,35 +284,35 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
       </p>
     </div>
     <div class="roadmap">
-      <div class="rm-row">
+      <div class="rm-row reveal delay-1">
         <div class="rm-when">Now</div>
         <div class="rm-what">
           <h3>Public Beta · BUSL-1.1</h3>
           <p>Source-available, free for non-production. Active development on the open-source repo. Issues and pull requests welcome.</p>
         </div>
       </div>
-      <div class="rm-row">
+      <div class="rm-row reveal delay-2">
         <div class="rm-when">Next 3–6 months</div>
         <div class="rm-what">
           <h3>Hardening &amp; documentation</h3>
           <p>Wire the remaining template-stage agents to real data sources where it makes sense. Add typed agent-output artifacts (TypedDict / pydantic). Expand the live smoke suite. Publish the plug-in marketplace conventions.</p>
         </div>
       </div>
-      <div class="rm-row">
+      <div class="rm-row reveal delay-3">
         <div class="rm-when">When meaningful demand exists</div>
         <div class="rm-what">
           <h3>Commercial license tier</h3>
           <p>Per-team and per-organisation production licenses. Pricing transparent and disclosed up front. No hidden enterprise quote-only pricing. Buying a license unlocks production use; the source stays the same.</p>
         </div>
       </div>
-      <div class="rm-row">
+      <div class="rm-row reveal delay-4">
         <div class="rm-when">Optional, later</div>
         <div class="rm-what">
           <h3>Managed hosted version</h3>
           <p>If — and only if — there's clear demand for a hosted run-it-for-me option. Same code, same gate, same read-only architecture. Operated as a service. Separately licensed.</p>
         </div>
       </div>
-      <div class="rm-row">
+      <div class="rm-row reveal delay-5">
         <div class="rm-when">2030-01-01</div>
         <div class="rm-what">
           <h3>Apache 2.0 conversion</h3>
@@ -318,7 +320,7 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
         </div>
       </div>
     </div>
-    <div class="rm-not">
+    <div class="rm-not reveal">
       <h4>Things this project will <em>not</em> do</h4>
       <ul>
         <li>Issue a token, NFT, points system, or any other speculative instrument.</li>
@@ -365,6 +367,8 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
     </div>
   </div>
 </footer>
+
+<script src="main.js" defer></script>
 
 </body>
 </html>
