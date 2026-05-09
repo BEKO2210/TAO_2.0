@@ -49,15 +49,17 @@
     <img class="hero-logo" src="logo-256.png" alt="TAO Swarm" width="92" height="92" loading="eager">
     <div class="eyebrow">v1.0 · Beta · BUSL-1.1</div>
     <h1>
-      A multi-agent intelligence system<br>
+      An autonomous multi-agent system<br>
       for <span class="grad">Bittensor</span>, that runs<br>
       <span class="grad-2">on your own machine</span>.
     </h1>
     <p class="lead">
-      15 specialized agents coordinated by a central orchestrator with a
-      gate-before-route approval layer. Reads the live Bittensor chain,
-      Subscan, CoinGecko, and GitHub. Never auto-signs, never stores
-      seeds, never phones home.
+      15 specialized agents coordinated by a central orchestrator with
+      a gate-before-route approval layer. Four opt-in modes — from
+      read-only research to single-user auto-trading with kill-switch,
+      position cap, and daily loss limit. Reads the live Bittensor
+      chain, Subscan, CoinGecko, and GitHub. Never stores seed phrases,
+      never phones home.
     </p>
     <div class="cta-row">
       <a href="https://github.com/BEKO2210/TAO_2.0" class="btn-primary">View on GitHub</a>
@@ -77,7 +79,7 @@
   <div class="section-inner">
     <div class="section-head reveal">
       <span class="kicker">What it is</span>
-      <h2>A read-only research swarm.<br>Not a trading bot.</h2>
+      <h2>Research swarm by default.<br>Auto-trader by deliberate choice.</h2>
     </div>
     <div class="grid-3">
       <div class="card reveal delay-1">
@@ -91,9 +93,11 @@
         <div class="card-num">02</div>
         <h3>Gate before route</h3>
         <p>Every action is classified <code>SAFE</code> / <code>CAUTION</code> /
-        <code>DANGER</code> before the router ever sees it. DANGER outputs
-        a plan only — execute_trade, sign_transaction, stake, unstake,
-        swap_coldkey, reveal_seed are all blocked by construction.</p>
+        <code>DANGER</code> before the router ever sees it. In
+        read-only modes DANGER outputs a plan only. In opt-in
+        <code>AUTO_TRADING</code> mode DANGER routes to the audited
+        execution path <em>only</em> when kill-switch off, position
+        cap set, and daily-loss-limit set.</p>
       </div>
       <div class="card reveal delay-3">
         <div class="card-num">03</div>
@@ -105,12 +109,14 @@
       </div>
       <div class="card reveal delay-4">
         <div class="card-num">04</div>
-        <h3>Wallet stays in your hands</h3>
-        <p>Default mode is <code>NO_WALLET</code>.
-        <code>WATCH_ONLY</code> accepts public SS58 addresses only.
-        <code>MANUAL_SIGNING</code> emits unsigned plans — you sign on
-        a device we never touch. The system never asks for, stores, or
-        transmits seed phrases or private keys.</p>
+        <h3>Four wallet modes, opt-in</h3>
+        <p>Default is <code>NO_WALLET</code>.
+        <code>WATCH_ONLY</code> takes public SS58 only.
+        <code>MANUAL_SIGNING</code> emits unsigned plans for you to
+        sign externally. <code>AUTO_TRADING</code> uses a single hot
+        key with a hard cap, kill-switch, and daily-loss-stop. Seed
+        phrases and coldkey private keys are never asked for, stored,
+        or transmitted.</p>
       </div>
       <div class="card reveal delay-5">
         <div class="card-num">05</div>
@@ -282,11 +288,13 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
   <div class="section-inner">
     <div class="section-head reveal">
       <span class="kicker">Roadmap &amp; monetization</span>
-      <h2>Honest plan. No tokens. No promises.</h2>
+      <h2>Honest plan. No tokens. No managed funds.</h2>
       <p class="subhead">
-        We do not have a token. We will not launch a token. The project's
-        long-term sustainability is funded by commercial licensing and
-        optional support — not by selling speculation.
+        We do not have a token and will not launch one. We do not
+        manage anyone's funds. Auto-trading is a single-user feature
+        running on your own machine with your own hot key. Long-term
+        sustainability comes from commercial licensing for hosting /
+        multi-user / managed-fund use cases — not from speculation.
       </p>
     </div>
     <div class="roadmap">
@@ -330,10 +338,10 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
       <h4>Things this project will <em>not</em> do</h4>
       <ul>
         <li>Issue a token, NFT, points system, or any other speculative instrument.</li>
-        <li>Auto-execute trades, stakes, or any value-moving on-chain action.</li>
-        <li>Promise market returns, "alpha", or guaranteed yield.</li>
+        <li>Manage other people's funds, run a custodial service, or pool capital.</li>
+        <li>Promise market returns, "alpha", or guaranteed yield. Auto-trading is opt-in and can lose all of the funds in the configured hot key.</li>
         <li>Phone home with telemetry, analytics, or usage reporting.</li>
-        <li>Ask for, store, log, or transmit seed phrases or private keys.</li>
+        <li>Ask for, store, log, or transmit seed phrases or coldkey private keys.</li>
         <li>Use your data for training, advertising, or third-party sales.</li>
       </ul>
     </div>

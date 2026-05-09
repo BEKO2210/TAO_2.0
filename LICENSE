@@ -4,24 +4,39 @@ Licensor:                 BEKO2210 (TAO_2.0 contributors)
 Licensed Work:            TAO_2.0 — Bittensor Multi-Agent Intelligence System
                           (this repository at the time of distribution)
 Additional Use Grant:     You may use, copy, modify, distribute, and create
-                          derivative works of the Licensed Work for
-                          Non-Production Use only.
+                          derivative works of the Licensed Work for the
+                          following uses:
 
-                          "Non-Production Use" means use that is:
-                            (a) personal, educational, research, or
-                                evaluation use by an individual or by a
-                                team of up to five (5) people;
-                            (b) not used to operate a service made
-                                available to third parties for a fee or
-                                other consideration;
-                            (c) not used to make automated trading,
-                                staking, signing, or similar value-moving
-                                decisions on behalf of yourself or others;
-                            (d) not embedded in a product or system that
-                                is sold, licensed, hosted, or otherwise
-                                distributed to third parties.
+                          (A) Non-Production Use:
+                              personal, educational, research, or
+                              evaluation use by an individual or by a
+                              team of up to five (5) people; not used to
+                              operate a service made available to third
+                              parties.
 
-                          Production Use of any kind requires a separate
+                          (B) Personal Single-User Automated Trading:
+                              automated trading, staking, signing, or
+                              other value-moving on-chain decisions are
+                              permitted ONLY when:
+                                (1) the operator is the same natural
+                                    person who owns the on-chain assets
+                                    being moved;
+                                (2) the software is not made available
+                                    to any third party (no hosting, no
+                                    SaaS, no group operation);
+                                (3) the operator complies with all
+                                    applicable laws in their juris-
+                                    diction (securities, AML/KYC,
+                                    tax, exchange terms);
+                                (4) the operator has read and accepts
+                                    the risks listed in DISCLAIMER.md.
+
+                          Any other use — including but not limited to
+                          operating an automated-trading service for
+                          third parties, embedding the software in a
+                          paid product, hosting a multi-user instance,
+                          managing other people's funds, or any
+                          commercial deployment — requires a separate
                           commercial license from the Licensor.
 
 Change Date:              2030-01-01

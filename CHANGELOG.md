@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Architectural pivot — `AUTO_TRADING` mode authorised
+
+The owner has authorised an architectural pivot: in addition to the
+existing `NO_WALLET` / `WATCH_ONLY` / `MANUAL_SIGNING` modes, the
+project will support a fourth mode, `AUTO_TRADING`, in which the
+software signs and submits transactions on behalf of the operator
+within hard limits.
+
+This is an authorised relaxation of the previous "never auto-execute"
+constitution. The pivot is being landed in two phases:
+
+**Step 1 (this PR) — public framing only, no code yet:**
+
+- `LICENSE`: Additional Use Grant rewritten with two parts. Part (A)
+  preserves Non-Production Use as before. Part (B) explicitly permits
+  *Personal Single-User Automated Trading* on assets the operator
+  themselves owns; multi-user / hosted / managed-fund use still
+  requires a commercial licence.
+- `DISCLAIMER.md`: rewritten with a new "Operating modes" section
+  (4 modes, default safest), a new "Auto-trading risks" section, and
+  expanded compliance / no-warranty language for trading-specific
+  failure modes (key exfiltration, slippage, regulatory).
+- `CLAUDE.md`: "Non-negotiable safety rules" replaced by the layered
+  "Safety architecture" matrix (per-mode capabilities) plus
+  always-on rules (never store seeds, never store coldkey private
+  keys) and auto-trading-mode-only rules (gate-protected execution,
+  kill switch, position cap, daily-loss-limit).
+- `README.md`: top banner rewritten ("autonomes Multi-Agenten-System"
+  instead of "read-only Multi-Agentensystem"). Lizenz-Section reflects
+  the new "Personal Single-User Auto-Trading allowed" grant.
+- `landing/index.html` + `landing/de.html`: hero copy, "Was/What"
+  card 02 + 04, roadmap "Will not do" list, all rewritten to
+  reflect that auto-trading is an opt-in mode (not a forbidden one).
+  The "no managed funds, no token, no telemetry" promises stay.
+
+**Step 2 (next PR) — code:**
+
+- New `tao_swarm.trading/` module isolated from the read-only swarm
+- Strategy plug-in framework with paper-trading default
+- Hot-key custody chosen by the operator (encrypted file / hardware
+  wallet / separate hot key) — the user has not yet decided which
+- `ApprovalGate` extension for the new mode with kill-switch,
+  position cap, daily-loss-limit gates
+- Backtesting harness against historical data first
+
+
+
 ### Changed — Licensing & legal hardening
 
 - **Switched from MIT to Business Source License 1.1 (BUSL-1.1).**
