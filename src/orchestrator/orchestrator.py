@@ -15,6 +15,13 @@ from typing import Any
 
 from src.orchestrator.approval_gate import ApprovalGate
 from src.orchestrator.context import AgentContext
+from src.orchestrator.resilience import (
+    CancelToken,
+    RetryPolicy,
+    TaskTimeoutError,
+    from_task_field as _resolve_retry_policy,
+    run_with_resilience,
+)
 from src.orchestrator.task_router import TaskRouter
 
 logger = logging.getLogger(__name__)
@@ -65,6 +72,10 @@ class SwarmOrchestrator:
         self._log_lock: threading.Lock = threading.Lock()
         self._agent_locks: dict[str, threading.Lock] = {}
         self._agent_locks_lock: threading.Lock = threading.Lock()
+        # Run-wide cooperative cancel token. Default ``None`` keeps the
+        # existing behaviour. Callers can ``orch.cancel_run()`` to stop
+        # an in-flight ``execute_run`` (or any execute_task that polls).
+        self._run_cancel_token: CancelToken | None = None
 
         logger.info(
             "SwarmOrchestrator initialized (wallet_mode=%s, safety_override=%s)",
@@ -236,12 +247,34 @@ class SwarmOrchestrator:
             # Run the agent. Hold the per-agent lock so two parallel
             # execute_task calls into the *same* agent serialise; tasks
             # against *different* agents still run concurrently.
+            #
+            # Resilience knobs are opt-in via the task dict:
+            #   task['timeout_s']    — single-call wall-clock cap
+            #   task['retry_policy'] — RetryPolicy or dict; default = no retry
+            #   task['cancel_token'] — CancelToken to bail out cooperatively
+            # Tasks without these fields execute exactly as before.
             logger.info(
                 "Executing task via %s (classification=%s)",
                 agent_name, classification.value,
             )
-            with self._agent_lock(agent_name):
-                output = agent.run(task)
+            timeout_s = task.get("timeout_s")
+            retry_policy = _resolve_retry_policy(task.get("retry_policy"))
+            cancel_token = task.get("cancel_token") or self._run_cancel_token
+
+            def _do_run():
+                with self._agent_lock(agent_name):
+                    return agent.run(task)
+
+            if timeout_s or retry_policy or cancel_token:
+                output = run_with_resilience(
+                    _do_run,
+                    retry_policy=retry_policy,
+                    timeout_s=timeout_s,
+                    cancel_token=cancel_token,
+                    agent_name=agent_name,
+                )
+            else:
+                output = _do_run()
 
             # Lift the agent's internal per-call ``status`` field (e.g.
             # "complete", "snapshot", "plan_created", "INSUFFICIENT_DATA",
@@ -403,6 +436,39 @@ class SwarmOrchestrator:
             "summary": summary,
             "next_actions": self.get_next_actions(results),
         }
+
+    def cancel_run(self) -> CancelToken:
+        """
+        Cooperatively cancel any in-flight ``execute_run`` /
+        ``execute_task`` that observes the run-wide cancel token.
+
+        Idempotent — repeated calls just keep the token set. Returns
+        the token so callers can ``token.is_set()`` to confirm. Reset
+        via ``arm_cancel_token()`` for the next run.
+
+        Note: cancellation is **cooperative**. The orchestrator stops
+        between retries and during backoff sleeps. Agents that loop
+        over many items can poll ``task['cancel_token']`` (or the
+        run-wide token via ``self.context``) to bail out mid-call.
+        Python doesn't expose true thread interruption — a CPU-bound
+        agent that ignores the token will run to completion.
+        """
+        if self._run_cancel_token is None:
+            self._run_cancel_token = CancelToken()
+        self._run_cancel_token.cancel()
+        self._log_event(event_type="run_cancelled")
+        return self._run_cancel_token
+
+    def arm_cancel_token(self) -> CancelToken:
+        """
+        Install a fresh ``CancelToken`` for the run-wide channel.
+
+        Call this before ``execute_run`` if you want to be able to
+        ``cancel_run()`` later. The token replaces any previously-
+        cancelled one so the next run starts clean.
+        """
+        self._run_cancel_token = CancelToken()
+        return self._run_cancel_token
 
     def reset_context(self) -> None:
         """
