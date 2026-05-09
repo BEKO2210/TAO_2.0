@@ -754,6 +754,94 @@ def render_trading():
             f"Break-evens: {d['breakevens']}"
         )
 
+    # ---- Learning: per-strategy KPI + live ensemble weights ------------
+    from tao_swarm.dashboard.trading_view import (
+        per_strategy_equity_curves,
+        per_strategy_snapshot,
+    )
+    from tao_swarm.trading import (
+        PerformanceTracker,
+        StrategyRegistry,
+        inverse_loss_weights,
+    )
+
+    tracker = PerformanceTracker(ledger)
+    try:
+        registry = StrategyRegistry()
+        registry.register_builtins()
+        registry_names = list(registry.names())
+    except Exception:
+        registry_names = []
+
+    overview_strategies = sorted(
+        set(overview.distinct_strategies) | set(registry_names)
+    )
+    if overview_strategies:
+        suggested_weights = inverse_loss_weights(
+            overview_strategies, tracker, window_days=14,
+        )
+        snapshots = per_strategy_snapshot(
+            tracker, strategies=overview_strategies,
+            window_days=14, weights=suggested_weights,
+        )
+
+        st.subheader("Per-strategy performance (14-day window)")
+        snap_rows = []
+        for s in snapshots:
+            snap_rows.append({
+                "strategy": s.strategy,
+                "pnl_tao": s.realised_pnl_tao,
+                "win_rate": f"{s.win_rate * 100:.1f}%",
+                "sharpe": s.sharpe,
+                "closes": s.num_realised_closes,
+                "attempts": s.num_attempts,
+                "weight": (
+                    f"{s.ensemble_weight * 100:.1f}%"
+                    if s.ensemble_weight is not None else "—"
+                ),
+                "insufficient_data": s.insufficient_data,
+            })
+        if snap_rows:
+            st.dataframe(
+                pd.DataFrame(snap_rows),
+                use_container_width=True, hide_index=True,
+            )
+
+        # Live ensemble weight bars: visualise capital allocation
+        # the operator would get with --strategy ensemble:all today.
+        st.subheader("Suggested ensemble weights (inverse-loss, 14-day)")
+        st.caption(
+            "Hypothetical allocation if you ran `--strategy ensemble:all` "
+            "today. Active only when the runner is wired with an ensemble."
+        )
+        weight_rows = sorted(
+            suggested_weights.items(), key=lambda kv: -kv[1],
+        )
+        for name, w in weight_rows:
+            st.write(f"**{name}** — {w * 100:.1f}%")
+            st.progress(min(max(w, 0.0), 1.0))
+
+        # Per-strategy equity-curve overlay
+        equity_data = per_strategy_equity_curves(
+            ledger, overview_strategies, limit_per_strategy=500,
+        )
+        eq_frames = []
+        for name, curve in equity_data.items():
+            for p in curve:
+                eq_frames.append({
+                    "time": pd.to_datetime(p.timestamp, unit="s", utc=True),
+                    "strategy": name,
+                    "cumulative_pnl_tao": p.cumulative_pnl_tao,
+                })
+        if eq_frames:
+            st.subheader("Equity curves by strategy")
+            eq_overlay = pd.DataFrame(eq_frames)
+            pivoted = eq_overlay.pivot_table(
+                index="time", columns="strategy", values="cumulative_pnl_tao",
+                aggfunc="last",
+            ).ffill()
+            st.line_chart(pivoted, height=260, use_container_width=True)
+
     # ---- Recent trades table --------------------------------------------
     rows = trades_to_table_rows(
         ledger.list_trades(strategy=selected_strategy, limit=200)
