@@ -53,12 +53,53 @@ DEFAULT_CONFIG = {
 }
 
 
-def _config() -> dict:
-    """Build runtime config dict."""
+def _config(use_mock_data: bool | None = None, network: str | None = None) -> dict:
+    """
+    Build runtime config dict.
+
+    Args:
+        use_mock_data: If set, forces collectors offline (True) or live
+            (False). When None, falls back to TAO_USE_MOCK env var, then
+            defaults to True (offline-first per swarm convention).
+        network: Bittensor network for chain reads ("finney", "test",
+            "mock"). Falls back to TAO_NETWORK env var, then "mock".
+    """
+    if use_mock_data is None:
+        env_val = os.environ.get("TAO_USE_MOCK", "").lower()
+        if env_val in ("1", "true", "yes", "on"):
+            use_mock_data = True
+        elif env_val in ("0", "false", "no", "off"):
+            use_mock_data = False
+        else:
+            use_mock_data = True
+
+    if network is None:
+        network = DEFAULT_CONFIG["network"]
+    # In mock mode, force network='mock' so the chain collector doesn't
+    # try to contact finney even if the user only flipped --mock.
+    if use_mock_data:
+        network = "mock"
+
     return {
         **DEFAULT_CONFIG,
         "db_path": f"{DEFAULT_CONFIG['db_dir']}/chain_cache.db",
+        "use_mock_data": use_mock_data,
+        "network": network,
     }
+
+
+def _mode_banner(config: dict) -> str:
+    """One-line banner showing which data source the command will use."""
+    if config.get("use_mock_data", True):
+        return click.style(
+            f"  MODE: mock (offline fixtures)  — pass --live for real data",
+            fg="yellow",
+        )
+    network = config.get("network", "finney")
+    return click.style(
+        f"  MODE: live (network={network})  — pass --mock for offline fixtures",
+        fg="green",
+    )
 
 
 # ── Custom Group ──────────────────────────────────────────────────────────
@@ -81,13 +122,50 @@ class TaoSwarmCLI(click.Group):
 
 @click.group(cls=TaoSwarmCLI, invoke_without_command=False)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
+@click.option(
+    "--live/--mock",
+    "live_mode",
+    default=None,
+    help=(
+        "Use live upstream data (--live) or offline fixtures (--mock). "
+        "Default: mock (offline-first). Override the default permanently "
+        "with TAO_USE_MOCK=0/1."
+    ),
+)
+@click.option(
+    "--network",
+    type=click.Choice(["mock", "finney", "test"]),
+    default=None,
+    help=(
+        "Bittensor network for chain reads. Implies --live unless "
+        "'mock' is selected. Defaults to TAO_NETWORK or 'mock'."
+    ),
+)
 @click.pass_context
-def cli(ctx, verbose):
+def cli(ctx, verbose, live_mode, network):
     """TAO Swarm CLI — Bittensor Multi-Agent Intelligence System."""
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # If the user passed --network finney|test, that's an opt-in to live
+    # mode unless they also explicitly passed --mock.
+    if network in ("finney", "test") and live_mode is None:
+        live_mode = True
+
+    # Symmetric default: --live without --network should target the
+    # mainnet, not the mock pseudo-network (chain_readonly treats
+    # network=mock as an alias for use_mock_data=True).
+    if live_mode is True and network is None:
+        network = "finney"
+
+    use_mock_data: bool | None
+    if live_mode is None:
+        use_mock_data = None
+    else:
+        use_mock_data = not live_mode
+
     ctx.ensure_object(dict)
-    ctx.obj["config"] = _config()
+    ctx.obj["config"] = _config(use_mock_data=use_mock_data, network=network)
 
 
 # ── status ────────────────────────────────────────────────────────────────
@@ -208,6 +286,11 @@ def subnets(ctx, limit, json_output):
         return
 
     click.echo(click.style("\n=== Bittensor Subnets ===", fg="blue", bold=True))
+    click.echo(_mode_banner(config))
+    if collector._mock_fallback_reason:
+        click.echo(click.style(
+            f"  fallback: {collector._mock_fallback_reason}", fg="yellow",
+        ))
     click.echo()
     click.echo(f"  {'ID':>4s}  {'Name':20s} {'Neurons':>8s} {'Emission':>10s} {'Block':>10s}")
     click.echo(f"  {'-'*4:>4s}  {'-'*20:20s} {'-'*8:>8s} {'-'*10:>10s} {'-'*10:>10s}")
@@ -243,6 +326,7 @@ def score(ctx, netuid, detailed, json_output):
     config = ctx.obj["config"]
 
     click.echo(click.style(f"\n=== Scoring Subnet {netuid} ===", fg="blue", bold=True))
+    click.echo(_mode_banner(config))
 
     # Build profile
     meta_collector = SubnetMetadataCollector(config)
@@ -385,6 +469,11 @@ def market(ctx, days, json_output):
     collector = MarketDataCollector(config)
 
     click.echo(click.style("\n=== TAO Market Data ===", fg="blue", bold=True))
+    click.echo(_mode_banner(config))
+    if collector._mock_fallback_reason:
+        click.echo(click.style(
+            f"  fallback: {collector._mock_fallback_reason}", fg="yellow",
+        ))
 
     # Current price
     price = collector.get_tao_price()
@@ -452,8 +541,10 @@ def risk(ctx, subnet, repo, json_output):
         from scoring.risk_score import RiskScorer
 
     scorer = RiskScorer()
+    config = ctx.obj["config"]
 
     click.echo(click.style("\n=== Risk Review ===", fg="blue", bold=True))
+    click.echo(_mode_banner(config))
 
     if subnet:
         click.echo(f"\n  Assessing subnet {subnet}...")
@@ -700,14 +791,17 @@ def dashboard(ctx, port, host, no_browser):
 # ── version ───────────────────────────────────────────────────────────────
 
 @cli.command()
-def version():
+@click.pass_context
+def version(ctx):
     """Show version information."""
+    config = ctx.obj["config"]
     click.echo(click.style("\n=== TAO Swarm ===", fg="blue", bold=True))
     click.echo()
     click.echo(f"  Version:    {VERSION}")
     click.echo(f"  Python:     {sys.version.split()[0]}")
     click.echo(f"  Platform:   {sys.platform}")
     click.echo(f"  Mode:       READ-ONLY (SAFE)")
+    click.echo(_mode_banner(config))
     click.echo()
     click.echo("  Safety Rules:")
     click.echo("    - No seed phrases stored")
