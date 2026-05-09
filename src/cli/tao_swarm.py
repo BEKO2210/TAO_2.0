@@ -791,6 +791,93 @@ def dashboard(ctx, port, host, no_browser):
 # ── version ───────────────────────────────────────────────────────────────
 
 @cli.command()
+@click.option("--json-output", "-j", is_flag=True, help="Output as JSON")
+@click.option("--plugin-paths", multiple=True,
+              help="Additional paths to scan for plug-in agents.")
+@click.pass_context
+def capabilities(ctx, json_output, plugin_paths):
+    """List all agent capabilities (built-ins + loaded plug-ins).
+
+    Builds a temporary orchestrator with every built-in agent registered
+    plus any plug-ins on TAO_PLUGIN_PATHS / --plugin-paths, then prints
+    the full capability table — what tasks the swarm can execute right
+    now and which agent handles each one.
+    """
+    try:
+        from src.orchestrator import SwarmOrchestrator, load_plugins
+        from src.agents import (
+            SystemCheckAgent, ProtocolResearchAgent, SubnetDiscoveryAgent,
+            SubnetScoringAgent, WalletWatchAgent, MarketTradeAgent,
+            RiskSecurityAgent, MinerEngineeringAgent, ValidatorEngineeringAgent,
+            TrainingExperimentAgent, InfraDevopsAgent, DashboardDesignAgent,
+            FullstackDevAgent, QATestAgent, DocumentationAgent,
+        )
+    except ImportError as exc:
+        click.echo(click.style(f"Import failed: {exc}", fg="red"), err=True)
+        raise click.Abort()
+
+    config = ctx.obj["config"]
+    orch = SwarmOrchestrator({**config, "wallet_mode": "WATCH_ONLY"})
+    for cls in (
+        SystemCheckAgent, ProtocolResearchAgent, SubnetDiscoveryAgent,
+        SubnetScoringAgent, WalletWatchAgent, MarketTradeAgent,
+        RiskSecurityAgent, MinerEngineeringAgent, ValidatorEngineeringAgent,
+        TrainingExperimentAgent, InfraDevopsAgent, DashboardDesignAgent,
+        FullstackDevAgent, QATestAgent, DocumentationAgent,
+    ):
+        try:
+            orch.register_agent(cls(config))
+        except Exception as exc:  # noqa: BLE001 — surface but don't crash
+            click.echo(click.style(
+                f"  warning: failed to register {cls.__name__}: {exc}",
+                fg="yellow",
+            ), err=True)
+
+    summary = load_plugins(orch, paths=list(plugin_paths) or None)
+    capabilities_list = orch.task_router.list_capabilities()
+    routable = sorted(orch.task_router.list_task_types())
+
+    if json_output:
+        click.echo(json.dumps({
+            "agents": orch.task_router.list_agents(),
+            "task_types": routable,
+            "capabilities": capabilities_list,
+            "plugins": summary.as_dict(),
+        }, indent=2, default=str))
+        return
+
+    click.echo(click.style("\n=== TAO Swarm Capabilities ===", fg="blue", bold=True))
+    click.echo(_mode_banner(config))
+    if summary.loaded:
+        click.echo(click.style(
+            f"  + {len(summary.loaded)} plug-in(s) loaded: "
+            f"{', '.join(summary.loaded)}", fg="green",
+        ))
+    click.echo()
+    click.echo(f"  {'task_type':<30} {'agent':<28} description")
+    click.echo(f"  {'-'*30} {'-'*28} {'-'*30}")
+    if capabilities_list:
+        for cap in sorted(capabilities_list, key=lambda c: c["task_type"]):
+            desc = (cap.get("description") or "")[:35]
+            click.echo(
+                f"  {cap['task_type'][:30]:<30} "
+                f"{cap['agent'][:28]:<28} "
+                f"{desc}"
+            )
+        click.echo()
+    else:
+        click.echo("  (no agent declares AGENT_CAPABILITIES yet — "
+                   "see docs/plugins.md for the format)")
+    click.echo()
+    click.echo(f"  Routable task_types ({len(routable)}):")
+    cols = 3
+    for i in range(0, len(routable), cols):
+        row = routable[i:i + cols]
+        click.echo("    " + "  ".join(f"{t:<24}" for t in row))
+    click.echo()
+
+
+@cli.command()
 @click.pass_context
 def version(ctx):
     """Show version information."""

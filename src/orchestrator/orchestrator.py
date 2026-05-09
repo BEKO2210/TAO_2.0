@@ -15,6 +15,7 @@ from typing import Any
 
 from src.orchestrator.approval_gate import ApprovalGate
 from src.orchestrator.context import AgentContext
+from src.orchestrator.progress import _OrchestratorProgressChannel
 from src.orchestrator.resilience import (
     CancelToken,
     RetryPolicy,
@@ -76,6 +77,13 @@ class SwarmOrchestrator:
         # existing behaviour. Callers can ``orch.cancel_run()`` to stop
         # an in-flight ``execute_run`` (or any execute_task that polls).
         self._run_cancel_token: CancelToken | None = None
+        # Heartbeat / progress sink. Agents that opt in can call
+        # ``self.report_progress(percent, message)`` during long
+        # operations; the orchestrator records the events and tracks
+        # last-heartbeat timestamps for stale-task detection.
+        self.progress: _OrchestratorProgressChannel = _OrchestratorProgressChannel(
+            log_event=self._log_event,
+        )
 
         logger.info(
             "SwarmOrchestrator initialized (wallet_mode=%s, safety_override=%s)",
@@ -112,6 +120,16 @@ class SwarmOrchestrator:
         # the right check, not a truthiness check).
         if getattr(agent_instance, "context", None) is None:
             agent_instance.context = self.context
+
+        # Heartbeat / progress reporter. Agents that opt in can call
+        # ``self.report_progress(percent, message)`` during long-
+        # running work. We bind the reporter to the agent's name so
+        # the agent can't accidentally report progress under another
+        # agent's identity. Agents that don't call it lose nothing.
+        if not callable(getattr(agent_instance, "report_progress", None)):
+            agent_instance.report_progress = self.progress.make_reporter_for(
+                agent_name,
+            )
 
         logger.info(
             "Agent registered: %s v%s (%s)",
