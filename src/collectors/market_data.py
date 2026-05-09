@@ -15,41 +15,68 @@ from typing import Optional
 
 import requests
 
+from src.collectors._base import BaseCollector
+
 logger = logging.getLogger(__name__)
 
 # CoinGecko public API endpoints
 COINGECKO_API_BASE = "https://api.coingecko.com/api/v3"
 TAO_COIN_ID = "bittensor"
 
+# Mock fixture data so the collector can run offline. Numbers are
+# stable, plausible, and stamped with a clear ``_meta.mode == "mock"``
+# downstream so consumers can tell.
+_MOCK_PRICE: dict = {
+    "bittensor": {
+        "usd": 350.0,
+        "usd_market_cap": 2_500_000_000.0,
+        "usd_24h_vol": 75_000_000.0,
+        "usd_24h_change": -2.9,
+        "btc": 0.00525,
+        "last_updated_at": 1_715_000_000,
+    }
+}
 
-class MarketDataCollector:
+
+class MarketDataCollector(BaseCollector):
     """
     Collects TAO market data from public APIs.
 
-    Uses CoinGecko's free tier (no API key needed).
-    All data is cached locally in SQLite to respect rate limits.
+    Uses CoinGecko's free tier (no API key needed). When
+    ``use_mock_data`` is True (the default), returns stable fixture
+    values without touching the network — keeps the test suite and
+    air-gapped runs deterministic.
     """
 
-    def __init__(self, config: dict) -> None:
+    SOURCE_NAME = "market_data"
+
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the market data collector.
 
         Args:
             config: Configuration dictionary with keys:
-                - 'db_path': SQLite database path (default: data/market_cache.db)
-                - 'request_timeout': HTTP timeout in seconds (default: 15)
-                - 'cache_ttl': Cache time-to-live in seconds (default: 120)
-                - 'coingecko_api_key': Optional CoinGecko API key for higher rate limits
+                - 'use_mock_data': bool — force fixture data (default True)
+                - 'db_path': SQLite database path
+                - 'request_timeout': HTTP timeout in seconds (default 15)
+                - 'cache_ttl': Cache time-to-live in seconds (default 120)
+                - 'coingecko_api_key': Optional CoinGecko API key
         """
+        config = config or {}
+        # Override BaseCollector defaults that this collector specialises.
+        config.setdefault("cache_ttl", 120)
+        config.setdefault("timeout", config.get("request_timeout", 15))
+        super().__init__(config)
         self.config = config
         self.db_path = config.get("db_path", "data/market_cache.db")
-        self.timeout = config.get("request_timeout", 15)
-        self.cache_ttl = config.get("cache_ttl", 120)
         self.api_key = config.get("coingecko_api_key", "")
 
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
-        logger.info("MarketDataCollector initialized")
+        logger.info(
+            "MarketDataCollector initialized (use_mock_data=%s)",
+            self.use_mock_data,
+        )
 
     # ── Database ──────────────────────────────────────────────────────────
 
@@ -138,11 +165,19 @@ class MarketDataCollector:
         Get current TAO price data.
 
         Returns:
-            Dictionary with price in USD, BTC, market cap, etc.
+            Dictionary with price in USD, BTC, market cap, etc., plus
+            a ``_meta`` block describing whether the data came from
+            mock or live.
         """
         cached = self._cache_get("price_cache", "coin_id", TAO_COIN_ID)
         if cached:
             return cached
+
+        mode = self._resolve_mode()
+        if mode == "mock":
+            data = {**_MOCK_PRICE, "_meta": self._meta(mode)}
+            self._cache_set("price_cache", "coin_id", TAO_COIN_ID, data)
+            return data
 
         data = self._api_request(
             f"simple/price",
@@ -168,6 +203,7 @@ class MarketDataCollector:
             "volume_24h_usd": tao_data.get("usd_24h_vol", 0.0),
             "change_24h_pct": tao_data.get("usd_24h_change", 0.0),
             "timestamp": int(time.time()),
+            "_meta": self._meta(mode, api=COINGECKO_API_BASE),
         }
         self._cache_set("price_cache", "coin_id", TAO_COIN_ID, result)
         return result
