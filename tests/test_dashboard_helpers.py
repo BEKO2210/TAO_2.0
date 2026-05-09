@@ -28,7 +28,36 @@ import sqlite3
 import time
 from pathlib import Path
 
+import pytest
+
 import src.dashboard.app as dash
+
+
+@pytest.fixture(autouse=True)
+def _reset_streamlit_caches():
+    """
+    Clear ``@st.cache_data`` caches before every test in this module.
+
+    The dashboard's ``fetch_*`` helpers are decorated with
+    ``@st.cache_data(ttl=...)``. When streamlit is installed (the
+    real CI install), the cache persists across tests in the same
+    process, which makes a test that seeds DB ``X`` see the data
+    from a previous test that seeded DB ``Y``. Locally without
+    streamlit, the decorator is a no-op and the bug stays hidden.
+
+    Clearing both ``cache_data`` and ``cache_resource`` (where they
+    exist) guarantees a clean slate per test regardless of which
+    streamlit version is installed.
+    """
+    for name in ("cache_data", "cache_resource"):
+        attr = getattr(dash.st, name, None)
+        clear = getattr(attr, "clear", None) if attr is not None else None
+        if callable(clear):
+            try:
+                clear()
+            except Exception:
+                pass
+    yield
 
 # ---------------------------------------------------------------------------
 # _discover_chain_db
