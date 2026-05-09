@@ -857,3 +857,283 @@ h2 {
   .nav, .hero-bg, .progress, .foot, .badges, .cta-row { display: none; }
   .section, .hero { page-break-inside: avoid; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Live-in-Action demo + Dashboard mockup (PR 2R)
+   ─────────────────────────────────────────────────────────────────────
+   Two reusable widgets:
+   1. .live-ticker — animated "tao_in" feed mimicking what the runner
+      ingests every tick. Plays a loop of realistic momentum.
+   2. .dash-mockup — a static HTML reproduction of the Streamlit
+      Trading panel (sidebar + main). Same dark-theme + Inter font
+      as the real dashboard so the visitor sees what they'd get.
+   Both honour prefers-reduced-motion. */
+
+/* ── Live ticker ─────────────────────────────────────────────────── */
+
+.live-demo {
+  background: linear-gradient(180deg, #050510 0%, #0a0a18 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 1fr;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+@media (min-width: 880px) {
+  .live-demo { grid-template-columns: 1fr 1.1fr; gap: 24px; }
+}
+
+.live-ticker-head {
+  display: flex; gap: 10px; align-items: center;
+  font-size: 0.78rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.live-ticker-head .live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #3fb950;
+  box-shadow: 0 0 10px rgba(63, 185, 80, 0.6);
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.78); }
+}
+
+.live-ticker {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--code);
+  background: #050510;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  min-height: 200px;
+  position: relative;
+  overflow: hidden;
+}
+.live-ticker-row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto auto;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(125, 211, 252, 0.07);
+  align-items: baseline;
+}
+.live-ticker-row:last-child { border-bottom: none; }
+.lt-id    { color: var(--muted); }
+.lt-name  { color: #c9d1d9; }
+.lt-tao   { color: var(--code); text-align: right; font-feature-settings: "tnum"; }
+.lt-delta { font-size: 0.78rem; padding: 1px 7px; border-radius: 8px; min-width: 56px; text-align: right; }
+.lt-up    { color: #3fb950; background: rgba(63, 185, 80, 0.10); }
+.lt-down  { color: #f85149; background: rgba(248, 81, 73, 0.10); }
+.lt-flat  { color: var(--muted); background: rgba(155, 166, 184, 0.07); }
+
+/* Cycling animation — the "live" feel without JavaScript. We rotate
+   the visible row by reordering with a CSS animation. */
+.live-ticker-stream {
+  position: absolute;
+  inset: 14px 16px;
+  animation: ticker-stream 12s linear infinite;
+}
+@keyframes ticker-stream {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+/* Animated equity curve — SVG path stroke-dashoffset trick. */
+.live-equity {
+  background: #050510;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  min-width: 0;
+}
+.live-equity-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 0.78rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.live-equity-value {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  color: #3fb950; font-weight: 600;
+  font-size: 1.1rem; font-feature-settings: "tnum";
+}
+.live-equity svg { width: 100%; height: 140px; display: block; }
+.live-equity .eq-path {
+  fill: none;
+  stroke: url(#eq-grad);
+  stroke-width: 2;
+  stroke-dasharray: 1200;
+  stroke-dashoffset: 1200;
+  animation: eq-draw 4.5s ease-out forwards 0.2s, eq-draw-loop 8s ease-in-out infinite 4.7s;
+}
+@keyframes eq-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes eq-draw-loop {
+  0%, 100% { stroke-dashoffset: 0; }
+  50%      { stroke-dashoffset: 0; opacity: 1; }
+}
+.live-equity .eq-fill {
+  fill: url(#eq-fill-grad);
+  opacity: 0;
+  animation: eq-fill-fade 5s ease-out forwards 1.2s;
+}
+@keyframes eq-fill-fade {
+  to { opacity: 0.18; }
+}
+
+/* ── Dashboard mockup ────────────────────────────────────────────── */
+
+.dash-mockup {
+  display: grid;
+  grid-template-columns: 1fr;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #0b1220;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: #e6edf3;
+  min-width: 0;
+  max-width: 100%;
+}
+@media (min-width: 880px) {
+  .dash-mockup { grid-template-columns: 240px 1fr; }
+}
+.dash-mockup .dm-bar {
+  background: #161b22;
+  border-bottom: 1px solid #1f2942;
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.78rem; color: #9ba6b8;
+}
+.dm-bar-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.dm-bar-dot.r { background: #f87171; } .dm-bar-dot.y { background: #fbbf24; } .dm-bar-dot.g { background: #4ade80; }
+.dm-bar-url { margin-left: 12px; color: #6b7280; font-family: ui-monospace, monospace; font-size: 0.74rem; }
+
+.dm-sidebar {
+  background: #121a2c;
+  border-right: 1px solid #1f2942;
+  padding: 18px 16px;
+  font-size: 0.84rem;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.dm-side-title {
+  color: #9ba6b8; font-size: 0.74rem; letter-spacing: 0.06em;
+  text-transform: uppercase; font-weight: 600;
+}
+.dm-nav { display: flex; flex-direction: column; gap: 4px; }
+.dm-nav-item {
+  padding: 6px 10px; border-radius: 8px;
+  color: #9ba6b8; cursor: default;
+}
+.dm-nav-item.active { background: #1a2540; color: #e6edf3; }
+
+.dm-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 0.74rem; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  border: 1px solid transparent;
+}
+.dm-pill-success { color: #3fb950; background: rgba(63,185,80,0.14); border-color: rgba(63,185,80,0.25); }
+.dm-pill-warn    { color: #d29922; background: rgba(210,153,34,0.14); border-color: rgba(210,153,34,0.25); }
+.dm-pill-danger  { color: #f85149; background: rgba(248,81,73,0.14); border-color: rgba(248,81,73,0.25); }
+.dm-pill-muted   { color: #9ba6b8; background: rgba(155,166,184,0.10); border-color: rgba(155,166,184,0.18); }
+
+.dm-cmd-group {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  color: #9ba6b8;
+}
+.dm-cmd-group-title { color: #c9d1d9; font-weight: 500; }
+
+.dm-main { padding: 22px 24px; min-width: 0; }
+.dm-main h2 {
+  font-weight: 600; font-size: 1.25rem;
+  border-bottom: 1px solid #1f2942; padding-bottom: 10px;
+  margin: 0 0 6px 0; color: #e6edf3;
+}
+.dm-caption { color: #9ba6b8; font-size: 0.86rem; margin: 0 0 18px 0; }
+
+.dm-hero {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px; margin: 14px 0 16px 0;
+}
+.dm-hero-cell {
+  background: #121a2c; border: 1px solid #1f2942;
+  border-radius: 12px; padding: 12px 14px;
+}
+.dm-hero-label {
+  color: #9ba6b8; font-size: 0.7rem;
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;
+}
+.dm-hero-value {
+  color: #e6edf3; font-weight: 700; font-size: 1.2rem;
+  font-feature-settings: "tnum";
+}
+
+.dm-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 10px;
+  border-left: 3px solid #3fb950;
+  background: rgba(63,185,80,0.08);
+  font-size: 0.84rem; margin: 12px 0;
+}
+
+.dm-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin: 10px 0;
+}
+@media (max-width: 720px) { .dm-row { grid-template-columns: 1fr; } }
+
+.dm-card {
+  background: #121a2c; border: 1px solid #1f2942;
+  border-radius: 12px; padding: 14px;
+}
+.dm-card-title {
+  font-size: 0.78rem; color: #9ba6b8;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+
+.dm-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.82rem; font-feature-settings: "tnum";
+}
+.dm-table th, .dm-table td {
+  text-align: left; padding: 6px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.dm-table th { color: #9ba6b8; font-weight: 500; font-size: 0.74rem; text-transform: uppercase; }
+.dm-table td.num { text-align: right; font-feature-settings: "tnum"; }
+.dm-pos { color: #3fb950; }
+.dm-neg { color: #f85149; }
+
+.dm-bar-stack { display: flex; flex-direction: column; gap: 8px; }
+.dm-bar-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; font-size: 0.82rem; }
+.dm-bar-track { height: 8px; background: rgba(124, 92, 255, 0.15); border-radius: 999px; overflow: hidden; grid-column: 1 / 2; }
+.dm-bar-fill { height: 100%; background: linear-gradient(90deg, #7c5cff, #58a6ff); border-radius: 999px; }
+.dm-bar-pct { color: #e6edf3; font-weight: 600; font-feature-settings: "tnum"; min-width: 48px; text-align: right; }
+
+.dm-chart-wrap {
+  background: #121a2c; border: 1px solid #1f2942;
+  border-radius: 12px; padding: 14px; margin-top: 12px;
+}
+.dm-chart-wrap svg { width: 100%; height: 140px; display: block; }
+
+/* Reduced motion: stop the ticker + curve animations */
+@media (prefers-reduced-motion: reduce) {
+  .live-ticker-stream { animation: none !important; }
+  .live-equity .eq-path { animation: none !important; stroke-dashoffset: 0; }
+  .live-equity .eq-fill { animation: none !important; opacity: 0.18; }
+  .live-ticker-head .live-dot { animation: none !important; }
+}
