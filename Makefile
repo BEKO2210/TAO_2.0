@@ -158,6 +158,24 @@ test-coverage: ## Test-Coverage-Bericht erstellen
 	@cd $(SRC_DIR) && $(VENV_PYTHON) -m pytest $(TESTS_DIR)/ --cov=$(SRC_DIR) --cov-report=html --cov-report=term-missing
 	@echo "$(GREEN)>>> Coverage-Bericht: htmlcov/index.html$(RESET)"
 
+bench: ## Alle Benchmarks ausfuehren (mock mode, no network)
+	@echo "$(GREEN)>>> ApprovalGate-Throughput...$(RESET)"
+	@$(VENV_PYTHON) -m scripts.bench_approval_gate
+	@echo ""
+	@echo "$(GREEN)>>> Per-Agent-Latenz...$(RESET)"
+	@$(VENV_PYTHON) -m scripts.bench_agents
+	@echo ""
+	@echo "$(GREEN)>>> Orchestrator end-to-end...$(RESET)"
+	@$(VENV_PYTHON) -m scripts.bench_orchestrator
+	@echo ""
+	@echo "$(GREEN)>>> Live-Collectors (opt-in TAO_BENCH_LIVE=1)...$(RESET)"
+	@$(VENV_PYTHON) -m scripts.bench_live
+	@echo ""
+	@echo "$(GREEN)>>> Ergebnisse: bench/results/*.json$(RESET)"
+
+bench-live: ## Live-Collector-Benchmarks gegen echte Endpunkte (Netzwerk!)
+	@TAO_BENCH_LIVE=1 $(VENV_PYTHON) -m scripts.bench_live
+
 lint: ## Code-Linting mit ruff
 	@echo "$(GREEN)>>> Fuehre Linting durch...$(RESET)"
 	@test -d $(VENV_DIR) || (echo "$(RED)Venv nicht gefunden.$(RESET)" && exit 1)
