@@ -58,16 +58,54 @@ class TaskRouter:
         """
         Register an agent instance with the router.
 
+        Auto-discovers ``AGENT_CAPABILITIES`` (if declared) and adds
+        each declared ``task_type`` to the routing table. Existing
+        ``_DEFAULT_TASK_MAP`` entries win on conflict so capabilities
+        can supplement but not override the curated defaults.
+
         Args:
             agent_name: Unique name for the agent (e.g. "system_check_agent")
             agent_instance: The agent class instance
         """
         self._agents[agent_name] = agent_instance
+
+        # Pick up agent-declared capabilities so plug-ins (and any
+        # built-in that adopts the new convention) auto-route without
+        # editing _DEFAULT_TASK_MAP.
+        from src.orchestrator.capabilities import discover_capabilities
+
+        capabilities = discover_capabilities(agent_instance)
+        added: list[str] = []
+        for cap in capabilities:
+            if cap.task_type in self._task_map:
+                continue  # default map wins on conflict
+            self._task_map[cap.task_type] = agent_name
+            added.append(cap.task_type)
+
         logger.info(
-            "Agent registered: %s (class=%s)",
+            "Agent registered: %s (class=%s, capabilities=%d, +%d task_types)",
             agent_name,
             type(agent_instance).__name__,
+            len(capabilities),
+            len(added),
         )
+
+    def list_capabilities(self) -> list[dict]:
+        """
+        Return a flat list of capability dicts across all registered
+        agents — what the dashboard / CLI renders as "what can the
+        swarm do?". Each entry carries the owning agent_name so the
+        dashboard can group by agent.
+        """
+        from src.orchestrator.capabilities import discover_capabilities
+
+        out: list[dict] = []
+        for agent_name, instance in self._agents.items():
+            for cap in discover_capabilities(instance):
+                row = cap.to_dict()
+                row["agent"] = agent_name
+                out.append(row)
+        return out
 
     def route_task(self, task: dict) -> str:
         """
