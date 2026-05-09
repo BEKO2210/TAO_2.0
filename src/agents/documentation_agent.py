@@ -360,28 +360,106 @@ current system state. Generates documentation status reports
             "file_count": len(files),
         }
 
-    def _list_agents(self) -> str:
-        """Generate a list of all agents."""
-        agents: list[tuple[str, str]] = [
-            ("system_check_agent", "System environment check"),
-            ("protocol_research_agent", "Bittensor protocol research"),
-            ("subnet_discovery_agent", "Subnet discovery and cataloging"),
-            ("subnet_scoring_agent", "Subnet scoring with 10 criteria"),
-            ("wallet_watch_agent", "Read-only wallet monitoring"),
-            ("market_trade_agent", "TAO market analysis (paper trading)"),
-            ("risk_security_agent", "Risk review with VETO power"),
-            ("miner_engineering_agent", "Miner setup analysis"),
-            ("validator_engineering_agent", "Validator feasibility analysis"),
-            ("training_experiment_agent", "Training run planning"),
-            ("infra_devops_agent", "Infrastructure setup"),
-            ("dashboard_design_agent", "Dashboard design"),
-            ("fullstack_dev_agent", "Full-stack development planning"),
-            ("qa_test_agent", "QA testing and compliance"),
-            ("documentation_agent", "Documentation maintenance"),
-        ]
+    # Single source of truth for agent descriptions. Used by both
+    # ``_list_agents`` (README) and ``_get_kimi_agents`` (KIMI) so
+    # the two views can't drift. New agents added to ``src/agents/``
+    # are picked up automatically; only the human-readable
+    # description below needs to be added.
+    _AGENT_DESCRIPTIONS: dict[str, dict[str, str]] = {
+        "system_check_agent": {
+            "readme": "System environment check",
+            "kimi": "Hardware/Software check",
+        },
+        "protocol_research_agent": {
+            "readme": "Bittensor protocol research",
+            "kimi": "Protocol knowledge",
+        },
+        "subnet_discovery_agent": {
+            "readme": "Subnet discovery and cataloging",
+            "kimi": "Subnet catalog",
+        },
+        "subnet_scoring_agent": {
+            "readme": "Subnet scoring with 10 criteria",
+            "kimi": "10-criteria scoring",
+        },
+        "wallet_watch_agent": {
+            "readme": "Read-only wallet monitoring",
+            "kimi": "Watch-only monitoring",
+        },
+        "market_trade_agent": {
+            "readme": "TAO market analysis (paper trading)",
+            "kimi": "Paper trading analysis",
+        },
+        "risk_security_agent": {
+            "readme": "Risk review with VETO power",
+            "kimi": "STOP/REJECT/PAUSE/PROCEED",
+        },
+        "miner_engineering_agent": {
+            "readme": "Miner setup analysis",
+            "kimi": "Setup analysis",
+        },
+        "validator_engineering_agent": {
+            "readme": "Validator feasibility analysis",
+            "kimi": "Feasibility check",
+        },
+        "training_experiment_agent": {
+            "readme": "Training run planning",
+            "kimi": "Training plans",
+        },
+        "infra_devops_agent": {
+            "readme": "Infrastructure setup",
+            "kimi": "Docker/Make/cron",
+        },
+        "dashboard_design_agent": {
+            "readme": "Dashboard design",
+            "kimi": "UI spec",
+        },
+        "fullstack_dev_agent": {
+            "readme": "Full-stack development planning",
+            "kimi": "Dev planning",
+        },
+        "qa_test_agent": {
+            "readme": "QA testing and compliance",
+            "kimi": "Secret/compliance checks",
+        },
+        "documentation_agent": {
+            "readme": "Documentation maintenance",
+            "kimi": "README/KIMI/logs",
+        },
+    }
 
+    def _discover_agent_names(self) -> list[str]:
+        """
+        Return the canonical list of agent ``AGENT_NAME``s, sourced
+        from the agents package itself rather than duplicated by
+        hand. Falls back to the description-table keys when import
+        fails (e.g. circular-import edge cases during tooling).
+        """
+        try:
+            from importlib import import_module
+            from pathlib import Path
+
+            from src import agents as _agents_pkg
+
+            names: list[str] = []
+            agents_dir = Path(_agents_pkg.__file__).parent
+            for path in sorted(agents_dir.glob("*_agent.py")):
+                if path.name.startswith("_"):
+                    continue
+                module = import_module(f"src.agents.{path.stem}")
+                name = getattr(module, "AGENT_NAME", None)
+                if isinstance(name, str) and name:
+                    names.append(name)
+            return names
+        except Exception:
+            return list(self._AGENT_DESCRIPTIONS.keys())
+
+    def _list_agents(self) -> str:
+        """Generate the README-flavored agent list, live-discovered
+        from ``src/agents/`` so it can't drift from reality."""
         lines: list[str] = []
-        for name, desc in agents:
+        for name in self._discover_agent_names():
+            desc = self._AGENT_DESCRIPTIONS.get(name, {}).get("readme") or "(no description)"
             lines.append(f"- **{name}**: {desc}")
         return "\n".join(lines)
 
@@ -458,24 +536,12 @@ current system state. Generates documentation status reports
         )
 
     def _get_kimi_agents(self) -> str:
+        """Generate the KIMI-flavored agent list. Pulls the same
+        live-discovered names as ``_list_agents`` so README and KIMI
+        can't drift apart on which agents exist."""
         lines: list[str] = []
-        for name, desc in [
-            ("system_check_agent", "Hardware/Software check"),
-            ("protocol_research_agent", "Protocol knowledge"),
-            ("subnet_discovery_agent", "Subnet catalog"),
-            ("subnet_scoring_agent", "10-criteria scoring"),
-            ("wallet_watch_agent", "Watch-only monitoring"),
-            ("market_trade_agent", "Paper trading analysis"),
-            ("risk_security_agent", "STOP/REJECT/PAUSE/PROCEED"),
-            ("miner_engineering_agent", "Setup analysis"),
-            ("validator_engineering_agent", "Feasibility check"),
-            ("training_experiment_agent", "Training plans"),
-            ("infra_devops_agent", "Docker/Make/cron"),
-            ("dashboard_design_agent", "UI spec"),
-            ("fullstack_dev_agent", "Dev planning"),
-            ("qa_test_agent", "Secret/compliance checks"),
-            ("documentation_agent", "README/KIMI/logs"),
-        ]:
+        for name in self._discover_agent_names():
+            desc = self._AGENT_DESCRIPTIONS.get(name, {}).get("kimi") or "(no description)"
             lines.append(f"- {name}: {desc}")
         return "\n".join(lines)
 
