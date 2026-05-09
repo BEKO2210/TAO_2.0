@@ -281,17 +281,32 @@ class Executor:
                 reason=f"unexpected signer error: {exc!r}",
             )
 
+        verify_suffix = ""
+        # If verification ran AND failed, append a clear audit suffix to
+        # the action and the note. The broadcast itself succeeded —
+        # we're only flagging that what we observed on-chain doesn't
+        # match what the proposal expected.
+        action = proposal.action
+        if receipt.verified is False:
+            action = f"{proposal.action}_verification_failed"
+            verify_suffix = (
+                f" | VERIFY-MISMATCH: {receipt.verify_message}"
+            )
+        elif receipt.verified is True and receipt.verify_message:
+            verify_suffix = f" | verified: {receipt.verify_message}"
+
         record = TradeRecord(
             strategy=strategy_name,
-            action=proposal.action,
+            action=action,
             target=dict(proposal.target),
             amount_tao=proposal.amount_tao,
             price_tao=proposal.price_tao,
             realised_pnl_tao=0.0,
             paper=False,
             note=(
-                f"{proposal.reasoning} | live: {receipt.message}"
-                if proposal.reasoning else f"live: {receipt.message}"
+                f"{proposal.reasoning} | live: {receipt.message}{verify_suffix}"
+                if proposal.reasoning
+                else f"live: {receipt.message}{verify_suffix}"
             ),
             tx_hash=receipt.tx_hash,
         )

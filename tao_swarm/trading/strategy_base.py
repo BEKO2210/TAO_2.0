@@ -28,6 +28,26 @@ class TradeProposal:
     The executor decides — based on guards — whether the proposal
     becomes a paper or live trade, or is rejected. The strategy
     only describes what it would *like* to happen.
+
+    Slippage controls (PR 2H)
+    -------------------------
+
+    Bittensor staking uses an AMM-style alpha pool, so the realised
+    price moves between proposal and broadcast. Two optional fields
+    let the strategy bound that risk:
+
+    - ``rate_tolerance``: maximum tolerated relative slippage as a
+      fraction (e.g. ``0.005`` = 0.5%). When set, the live signer
+      passes ``safe_staking=True`` (or ``safe_unstaking=True``) and
+      ``rate_tolerance=…`` to the SDK. ``None`` (default) uses the
+      SDK's safe-staking-off behaviour for backwards compatibility.
+    - ``allow_partial``: if ``True`` and the chain only has enough
+      liquidity for part of the order, accept the partial fill
+      instead of failing the whole extrinsic. ``False`` (default)
+      mirrors the SDK default — all-or-nothing.
+
+    Both are advisory in paper mode and only consulted by the live
+    signer when the executor decides to broadcast.
     """
 
     action: str               # "buy" / "sell" / "stake" / "unstake" / ...
@@ -36,6 +56,8 @@ class TradeProposal:
     price_tao: float          # the strategy's assumed price at proposal time
     confidence: float         # 0..1, advisory only
     reasoning: str            # human-readable, audited in the ledger note
+    rate_tolerance: float | None = None
+    allow_partial: bool = False
 
     def __post_init__(self) -> None:
         if self.amount_tao <= 0:
@@ -52,6 +74,11 @@ class TradeProposal:
             )
         if not self.action:
             raise ValueError("TradeProposal.action cannot be empty")
+        if self.rate_tolerance is not None and not 0.0 < self.rate_tolerance <= 1.0:
+            raise ValueError(
+                f"TradeProposal.rate_tolerance must be in (0, 1] when set, "
+                f"got {self.rate_tolerance}"
+            )
 
 
 @dataclass(frozen=True)

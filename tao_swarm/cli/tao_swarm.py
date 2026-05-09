@@ -1364,6 +1364,16 @@ def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
     ),
 )
 @click.option(
+    "--verify-broadcasts", is_flag=True,
+    help=(
+        "After each successful live broadcast, re-read the on-chain "
+        "stake to confirm the delta matches the proposal direction "
+        "within tolerance (1% by default). Mismatches are recorded in "
+        "the ledger with action '<verb>_verification_failed' but do NOT "
+        "abort the runner. Recommended in --live mode."
+    ),
+)
+@click.option(
     "--live-trading", is_flag=True,
     help=(
         "Set StrategyMeta.live_trading=True. Required (along with "
@@ -1383,7 +1393,8 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
     ctx, strategy_name, paper, keystore_path,
     threshold_pct, slot_size_tao, max_position_tao, max_daily_loss_tao,
     max_total_tao, tick_interval_s, max_ticks, ledger_db, kill_switch_path,
-    watchlist, reconcile_coldkey, live_trading, yes_i_understand,
+    watchlist, reconcile_coldkey, verify_broadcasts,
+    live_trading, yes_i_understand,
 ):
     """Run a strategy live or in paper mode against the read-only collectors."""
     from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
@@ -1497,7 +1508,11 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
         )
 
         def signer_factory_inner():  # noqa: D401 - factory closure
-            return BittensorSigner(handle, network=network_for_live)
+            return BittensorSigner(
+                handle, network=network_for_live,
+                verify=verify_broadcasts,
+                coldkey_ss58=reconcile_coldkey,
+            )
 
         signer_factory = signer_factory_inner
 
