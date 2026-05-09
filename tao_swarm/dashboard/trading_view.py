@@ -149,3 +149,133 @@ def runner_health_label(status: dict[str, Any] | None) -> tuple[str, str]:
     if state == "running":
         return "running", "success"
     return state, "secondary"
+
+
+# ---------------------------------------------------------------------------
+# Equity-curve + outcome helpers (PR 2L)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class EquityPoint:
+    """One sample on the realised-P&L equity curve."""
+
+    timestamp: float
+    cumulative_pnl_tao: float
+
+
+def equity_curve(trades) -> list[EquityPoint]:
+    """Compute the cumulative realised-P&L curve from a sequence of
+    :class:`tao_swarm.trading.ledger.TradeRecord` objects.
+
+    Trades are sorted ascending by timestamp before accumulation so
+    the result is monotonically increasing in time, even if the
+    caller passes them in ledger-list order (which may be desc).
+
+    Failed-attempt audit rows (``action`` ending in ``_failed``) are
+    excluded from the realised-P&L sum because they didn't actually
+    change the chain. They DO still appear in the trade table for
+    forensic visibility.
+    """
+    items = sorted(
+        (t for t in trades if not t.action.endswith("_failed")),
+        key=lambda t: t.timestamp,
+    )
+    out: list[EquityPoint] = []
+    cumulative = 0.0
+    for t in items:
+        cumulative += float(t.realised_pnl_tao)
+        out.append(EquityPoint(
+            timestamp=float(t.timestamp),
+            cumulative_pnl_tao=round(cumulative, 6),
+        ))
+    return out
+
+
+@dataclass(frozen=True)
+class OutcomeDistribution:
+    """Win/loss shape across a set of closed trades.
+
+    A "closed" trade here is any row with non-zero
+    ``realised_pnl_tao`` — typically the ``unstake_realised`` entries
+    written by the backtester or by future close-tracking strategies.
+    Open positions don't have a realised P&L yet, so they don't enter
+    these statistics.
+    """
+
+    wins: int
+    losses: int
+    breakevens: int
+    total_realised_pnl_tao: float
+    largest_win_tao: float
+    largest_loss_tao: float
+    win_rate: float
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "wins": self.wins,
+            "losses": self.losses,
+            "breakevens": self.breakevens,
+            "total_realised_pnl_tao": self.total_realised_pnl_tao,
+            "largest_win_tao": self.largest_win_tao,
+            "largest_loss_tao": self.largest_loss_tao,
+            "win_rate": self.win_rate,
+        }
+
+
+def outcome_distribution(trades) -> OutcomeDistribution:
+    """Compute win/loss statistics over closed trades.
+
+    Excludes failed-attempt audit rows (``*_failed``) and opens
+    (rows with realised P&L of exactly 0) — only realised closes
+    count toward win-rate arithmetic.
+    """
+    pnls: list[float] = []
+    for t in trades:
+        if t.action.endswith("_failed"):
+            continue
+        pnl = float(t.realised_pnl_tao)
+        if pnl == 0.0:
+            continue
+        pnls.append(pnl)
+    wins = sum(1 for p in pnls if p > 0)
+    losses = sum(1 for p in pnls if p < 0)
+    breakevens = sum(
+        1 for t in trades
+        if not t.action.endswith("_failed")
+        and float(t.realised_pnl_tao) == 0.0
+        and t.action.endswith("_realised")
+    )
+    total = sum(pnls)
+    win_rate = (wins / len(pnls)) if pnls else 0.0
+    return OutcomeDistribution(
+        wins=wins,
+        losses=losses,
+        breakevens=breakevens,
+        total_realised_pnl_tao=round(total, 6),
+        largest_win_tao=round(max(pnls), 6) if pnls else 0.0,
+        largest_loss_tao=round(min(pnls), 6) if pnls else 0.0,
+        win_rate=round(win_rate, 4),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Halt-runner control (kill-switch convenience)
+# ---------------------------------------------------------------------------
+
+def halt_runner_via_killswitch(path: str | Path, reason: str = "dashboard halt") -> None:
+    """Touch (or rewrite) the kill-switch file the runner watches.
+
+    The runner refuses to act once this file exists. The dashboard
+    button is the only "control" surface — the dashboard otherwise
+    stays read-only. Halting is intentionally one-way: the operator
+    has to manually delete the file to resume, mirroring the
+    ``KillSwitch`` no-reset rule.
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = (
+        f"halted via dashboard at {Path(__file__).name}: {reason}\n"
+    )
+    # Append rather than overwrite so multiple halts stack as audit log.
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write(payload)

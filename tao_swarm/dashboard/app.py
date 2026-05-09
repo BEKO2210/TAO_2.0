@@ -537,11 +537,16 @@ def render_risk_alerts():
 
 
 def render_trading():
-    """Render the Trading page — runner status + ledger summary."""
+    """Render the Trading page — runner status + ledger summary +
+    equity chart + outcome distribution + halt control + in-page
+    backtest mini-panel."""
     from datetime import datetime, timezone
 
     from tao_swarm.dashboard.trading_view import (
+        equity_curve,
+        halt_runner_via_killswitch,
         load_runner_status,
+        outcome_distribution,
         runner_health_label,
         summarise_ledger,
         trades_to_table_rows,
@@ -631,6 +636,38 @@ def render_trading():
             "`tao-swarm trade run --status-file <path>` to populate this."
         )
 
+    # ---- Halt-runner control ---------------------------------------------
+    kill_path = Path(os.environ.get(
+        "TAO_KILL_SWITCH_PATH", data_dir / ".kill",
+    ))
+    halt_col, halt_msg = st.columns([1, 4])
+    with halt_col:
+        if st.button(
+            "Halt runner",
+            disabled=kill_path.exists(),
+            help=(
+                "Touches the kill-switch file the runner watches. The "
+                "runner refuses to act once this file exists. Manual "
+                "deletion required to resume."
+            ),
+        ):
+            try:
+                halt_runner_via_killswitch(
+                    kill_path, reason="dashboard halt button",
+                )
+                st.toast("Kill switch triggered", icon="⛔")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Failed to write kill switch: {exc}")
+    with halt_msg:
+        if kill_path.exists():
+            st.warning(
+                f"Kill switch is ACTIVE: `{kill_path}`. Delete the file "
+                "manually to resume trading."
+            )
+        else:
+            st.caption(f"Kill-switch path: `{kill_path}` (not active).")
+
     st.divider()
 
     # ---- Ledger summary ---------------------------------------------------
@@ -643,7 +680,21 @@ def render_trading():
         return
 
     ledger = PaperLedger(str(ledger_path))
-    summary = summarise_ledger(ledger, limit=500)
+
+    # Strategy filter — pull distinct strategies once, let the operator
+    # narrow everything below to a single one.
+    overview = summarise_ledger(ledger, limit=2000)
+    strategy_options = ("All",) + overview.distinct_strategies
+    strategy_filter = st.selectbox(
+        "Strategy filter",
+        options=strategy_options,
+        index=0,
+        help="Restrict the ledger summary, equity curve, and trade "
+             "table below to a single strategy.",
+    )
+    selected_strategy = None if strategy_filter == "All" else strategy_filter
+
+    summary = summarise_ledger(ledger, strategy=selected_strategy, limit=500)
     s = summary.as_dict()
 
     col1, col2, col3, col4 = st.columns(4)
@@ -666,13 +717,135 @@ def render_trading():
             "Strategies present: " + ", ".join(s["distinct_strategies"])
         )
 
-    rows = trades_to_table_rows(ledger.list_trades(limit=200))
+    # ---- Equity curve ----------------------------------------------------
+    all_trades = list(ledger.list_trades(strategy=selected_strategy, limit=2000))
+    curve = equity_curve(all_trades)
+    if curve:
+        st.subheader("Equity curve (realised P&L)")
+        eq_df = pd.DataFrame([
+            {
+                "time": pd.to_datetime(p.timestamp, unit="s", utc=True),
+                "cumulative_pnl_tao": p.cumulative_pnl_tao,
+            }
+            for p in curve
+        ]).set_index("time")
+        st.line_chart(eq_df, height=260, use_container_width=True)
+    else:
+        st.caption("No realised P&L yet — equity curve becomes meaningful "
+                   "once a position closes.")
+
+    # ---- Outcome distribution -------------------------------------------
+    dist = outcome_distribution(all_trades)
+    d = dist.as_dict()
+    st.subheader("Closed-trade outcomes")
+    odc1, odc2, odc3, odc4 = st.columns(4)
+    with odc1:
+        st.metric("Wins", d["wins"])
+    with odc2:
+        st.metric("Losses", d["losses"])
+    with odc3:
+        st.metric("Win rate", f"{d['win_rate'] * 100:.1f}%")
+    with odc4:
+        st.metric("Net realised", f"{d['total_realised_pnl_tao']:+.4f}")
+    if d["wins"] or d["losses"]:
+        st.caption(
+            f"Largest win: {d['largest_win_tao']:+.4f} TAO · "
+            f"Largest loss: {d['largest_loss_tao']:+.4f} TAO · "
+            f"Break-evens: {d['breakevens']}"
+        )
+
+    # ---- Recent trades table --------------------------------------------
+    rows = trades_to_table_rows(
+        ledger.list_trades(strategy=selected_strategy, limit=200)
+    )
     if not rows:
         st.caption("No recent trades.")
-        return
-    df = pd.DataFrame(rows)
-    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.subheader("Recent trades")
+        df = pd.DataFrame(rows)
+        df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # ---- Backtest mini-panel --------------------------------------------
+    st.divider()
+    st.subheader("Backtest a strategy")
+    st.caption(
+        "Upload a JSON snapshot list (same shape as "
+        "`tao-swarm trade backtest --snapshots`). Result is in-memory "
+        "only — does NOT touch the ledger above."
+    )
+
+    bt_col1, bt_col2 = st.columns([2, 1])
+    with bt_col1:
+        upload = st.file_uploader(
+            "snapshots.json",
+            type=["json"],
+            help="JSON list of market_state dicts.",
+        )
+    with bt_col2:
+        try:
+            from tao_swarm.trading import StrategyRegistry
+            _reg = StrategyRegistry()
+            _reg.register_builtins()
+            strategy_choices = list(_reg.names())
+        except Exception:
+            strategy_choices = ["momentum_rotation", "mean_reversion"]
+        bt_strategy = st.selectbox(
+            "Strategy", options=strategy_choices, index=0,
+        )
+
+    bt_p1, bt_p2 = st.columns(2)
+    with bt_p1:
+        bt_threshold = st.number_input(
+            "threshold_pct", value=0.05, min_value=0.001,
+            max_value=1.0, step=0.005, format="%.3f",
+        )
+    with bt_p2:
+        bt_slot = st.number_input(
+            "slot_size_tao", value=1.0, min_value=0.001, step=0.5,
+        )
+
+    if upload is not None and st.button("Run backtest"):
+        try:
+            snapshots = json.loads(upload.getvalue().decode("utf-8"))
+        except Exception as exc:
+            st.error(f"Invalid JSON: {exc}")
+        else:
+            if not isinstance(snapshots, list):
+                st.error("Snapshot file must contain a JSON list.")
+            else:
+                from tao_swarm.trading import Backtester, StrategyRegistry
+                reg = StrategyRegistry()
+                reg.register_builtins()
+                cls = reg.get(bt_strategy)
+                strat = cls(
+                    threshold_pct=float(bt_threshold),
+                    slot_size_tao=float(bt_slot),
+                )
+                bt = Backtester(strat, paper_db_path=":memory:")
+                with st.spinner("Running backtest…"):
+                    result = bt.run(snapshots)
+                rd = result.as_dict()
+                bt_c1, bt_c2, bt_c3, bt_c4 = st.columns(4)
+                with bt_c1:
+                    st.metric("Steps", rd["num_steps"])
+                with bt_c2:
+                    st.metric("Executed", rd["num_executed"])
+                with bt_c3:
+                    st.metric("Win rate", f"{rd['win_rate'] * 100:.1f}%")
+                with bt_c4:
+                    st.metric(
+                        "Total P&L (TAO)", f"{rd['total_pnl_tao']:+.4f}",
+                    )
+                st.caption(
+                    f"Max drawdown: {rd['max_drawdown_tao']:.4f} TAO · "
+                    f"Pseudo-Sharpe: {rd['sharpe_ratio']:.4f} · "
+                    f"Refused: {rd['num_refused']}"
+                )
+                if rd["refusals"]:
+                    with st.expander("Refusal reasons"):
+                        for r in rd["refusals"]:
+                            st.write(f"- {r}")
 
 
 def render_run_logs():
