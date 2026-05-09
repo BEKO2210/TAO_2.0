@@ -478,12 +478,27 @@ h2 {
   box-shadow: 0 4px 14px -4px rgba(125, 211, 252, 0.4);
 }
 .step h3 { font-size: 1.05rem; margin-bottom: 12px; }
+/* Inner grid track sizing — without ``min-width: 0`` the 1fr column
+   would inherit the intrinsic width of its longest child (a long
+   URL inside the <pre>), pushing the whole step beyond the viewport
+   on narrow screens. */
+.step > * { min-width: 0; }
 .step pre {
   background: #050510; border: 1px solid var(--line);
   border-radius: var(--radius-sm); padding: 16px;
-  overflow-x: auto; color: var(--code);
+  color: var(--code);
   font-size: 0.86rem; line-height: 1.6;
   -webkit-overflow-scrolling: touch;
+  /* Mobile: wrap long lines so install commands stay visible.
+     ``overflow-wrap: anywhere`` breaks even URL-like tokens that
+     have no natural break point. ``overflow-x: auto`` is still set
+     as a fallback in case a token still doesn't wrap. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* Terminal */
@@ -491,6 +506,10 @@ h2 {
   background: #050510; border: 1px solid var(--line);
   border-radius: var(--radius); overflow: hidden;
   transition: border-color .25s var(--ease), transform .25s var(--ease);
+  /* Allow the terminal to shrink below its content's intrinsic
+     width — the inner pre will then handle horizontal scrolling. */
+  min-width: 0;
+  max-width: 100%;
 }
 .terminal:hover {
   border-color: rgba(125, 211, 252, 0.30);
@@ -511,8 +530,18 @@ h2 {
 .terminal pre {
   padding: 18px; color: var(--code);
   font-size: 0.84rem; line-height: 1.55;
+  /* Terminal output uses ASCII-aligned tables — keep monospace
+     layout, allow horizontal scroll inside the box rather than
+     wrapping (which would break the column alignment). */
   overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
   -webkit-overflow-scrolling: touch;
+}
+/* Smaller font on narrow viewports so a 70-column ASCII table
+   fits without sideways scrolling for most cases. */
+@media (max-width: 480px) {
+  .terminal pre { font-size: 0.72rem; padding: 14px; }
 }
 .term-prompt { color: var(--grad-a); }
 .term-warn { color: var(--warn); font-weight: 600; }

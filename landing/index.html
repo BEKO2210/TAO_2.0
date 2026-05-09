@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a12">
 <title>TAO Swarm — Local-first multi-agent intelligence for Bittensor</title>
-<meta name="description" content="A locally-run, read-only multi-agent system for researching Bittensor (TAO). 15 specialized agents, ApprovalGate safety, plug-in architecture. Proprietary — All Rights Reserved.">
-<meta property="og:title" content="TAO Swarm">
-<meta property="og:description" content="Local-first multi-agent intelligence for Bittensor. Read-only by construction. Proprietary.">
+<meta name="description" content="Local multi-agent intelligence for Bittensor (TAO). 15 specialised research agents plus an opt-in adaptive trading pipeline (paper-default, three-stage live opt-in, encrypted keystore, learning-weighted ensemble). 911 tests passing. Proprietary — All Rights Reserved.">
+<meta property="og:title" content="TAO Swarm — Multi-agent + adaptive trading for Bittensor">
+<meta property="og:description" content="15 research agents, adaptive trading pipeline, learning ensemble, premium dashboard. Local-only, no telemetry, paper-default, opt-in live.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="logo-512.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -54,21 +54,23 @@
       <span class="grad-2">on your own machine</span>.
     </h1>
     <p class="lead">
-      15 specialized agents coordinated by a central orchestrator with
-      a gate-before-route approval layer. Four opt-in modes — from
-      read-only research to single-user auto-trading with kill-switch,
-      position cap, and daily loss limit. Reads the live Bittensor
-      chain, Subscan, CoinGecko, and GitHub. Never stores seed phrases,
-      never phones home.
+      15 specialised research agents plus an opt-in adaptive trading
+      pipeline. Paper-trade by default; live execution requires three
+      independent opt-ins (env var, encrypted keystore, per-strategy
+      flag) and a typed confirmation. An adaptive ensemble shifts
+      capital toward strategies that are actually winning. Reads
+      Bittensor mainnet, Subscan, CoinGecko. Never stores seed
+      phrases. Never phones home.
     </p>
     <div class="cta-row">
       <a href="https://github.com/BEKO2210/TAO_2.0" class="btn-primary">View on GitHub</a>
       <a href="#proof" class="btn-secondary">See it run live</a>
     </div>
     <div class="badges">
-      <span class="badge">547 tests passing</span>
-      <span class="badge">10 live smokes</span>
+      <span class="badge">911 tests passing</span>
+      <span class="badge">12 live smoke tests</span>
       <span class="badge">129 mainnet subnets read</span>
+      <span class="badge">Argon2id + AES-256-GCM keystore</span>
       <span class="badge">no telemetry</span>
     </div>
   </div>
@@ -113,10 +115,11 @@
         <p>Default is <code>NO_WALLET</code>.
         <code>WATCH_ONLY</code> takes public SS58 only.
         <code>MANUAL_SIGNING</code> emits unsigned plans for you to
-        sign externally. <code>AUTO_TRADING</code> uses a single hot
-        key with a hard cap, kill-switch, and daily-loss-stop. Seed
-        phrases and coldkey private keys are never asked for, stored,
-        or transmitted.</p>
+        sign externally. <code>AUTO_TRADING</code> uses a dedicated
+        encrypted keystore (Argon2id + AES-256-GCM) and signs only
+        when env var, keystore unlock, and per-strategy opt-in are
+        all set. Seed phrases and main coldkey keys are never asked
+        for, stored, or transmitted.</p>
       </div>
       <div class="card reveal delay-5">
         <div class="card-num">05</div>
@@ -173,9 +176,62 @@ tao-swarm risk --content "Schedule_coldkey_swap to 5XYZ..."
           <h3>Go live</h3>
           <pre><code>pip install bittensor
 tao-swarm --live subnets   # 129 real Mainnet subnets
-tao-swarm --live market    # real CoinGecko price + 24h
-tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
+tao-swarm --live market    # real CoinGecko price + 24h</code></pre>
         </div>
+      </div>
+      <div class="step reveal delay-4">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Adaptive paper-trading</h3>
+          <pre><code>tao-swarm --live --network finney trade run \
+    --strategy ensemble:all --paper \
+    --tick-interval-s 60 \
+    --status-file data/runner_status.json
+# in another terminal:
+tao-swarm dashboard          # premium UI on :8501</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="trading" class="section">
+  <div class="section-inner">
+    <div class="section-head reveal">
+      <span class="kicker">Trading pipeline</span>
+      <h2>Paper by default.<br>Live behind three independent opt-ins.</h2>
+      <p class="subhead">Sixteen merged PRs (2A–2P) build the audited execution path on top of the read-only swarm. Nothing signs anything until every gate consents.</p>
+    </div>
+    <div class="grid-3">
+      <div class="card reveal delay-1">
+        <div class="card-num">01</div>
+        <h3>Encrypted keystore</h3>
+        <p>Argon2id (OWASP 2024 baseline: t=3, m=64 MiB, p=4) plus AES-256-GCM. Atomic write, <code>0o600</code> permissions, anti-timing failure mode. Same-exception for wrong password and tampered ciphertext.</p>
+      </div>
+      <div class="card reveal delay-2">
+        <div class="card-num">02</div>
+        <h3>Three-stage live gate</h3>
+        <p><code>TAO_LIVE_TRADING=1</code> in env, <code>--keystore-path</code> with the unlock password, <code>StrategyMeta.live_trading=True</code>. Plus a typed <strong>I&nbsp;UNDERSTAND</strong> confirmation in the CLI before the first extrinsic.</p>
+      </div>
+      <div class="card reveal delay-3">
+        <div class="card-num">03</div>
+        <h3>Cold-start reconciliation</h3>
+        <p>On the first tick after every restart the runner reads the actual on-chain stake from <code>get_stake_info_for_coldkey</code> and rewrites its position book. No more "started fresh, overshot the cap by my entire current stake".</p>
+      </div>
+      <div class="card reveal delay-4">
+        <div class="card-num">04</div>
+        <h3>Slippage + chain verification</h3>
+        <p><code>rate_tolerance</code> + <code>allow_partial</code> on every proposal. After every successful broadcast, an optional re-read confirms the on-chain delta matches direction within tolerance — mismatches land as <code>_verification_failed</code> audit rows.</p>
+      </div>
+      <div class="card reveal delay-5">
+        <div class="card-num">05</div>
+        <h3>Adaptive ensemble</h3>
+        <p>Run multiple strategies in parallel; weights come from recent realised P&amp;L via <code>inverse_loss_weights</code>. Winners get more capital, losers throttle (with a floor for regime change). Per-base attribution in the audit ledger.</p>
+      </div>
+      <div class="card reveal delay-6">
+        <div class="card-num">06</div>
+        <h3>Dashboard with halt</h3>
+        <p>Streamlit UI with always-visible runner-status pill, equity curves, per-strategy KPIs, suggested-weight bars, an in-page backtest harness, and a one-click halt button that touches the kill-switch file.</p>
       </div>
     </div>
   </div>
@@ -208,29 +264,27 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
       </div>
       <div class="terminal reveal delay-2">
         <div class="term-bar"><span></span><span></span><span></span></div>
-        <pre><code><span class="term-prompt">$</span> tao-swarm --live run --task \
-    '{"type": "execute_trade", "amount": 100}'
+        <pre><code><span class="term-prompt">$</span> tao-swarm trade learning-report --window-days 14
 
-  === Orchestrator Run ===
-  MODE: live (network=finney)
+  Learning report — 14 day window
 
-  Status: <span class="term-warn">blocked</span>
-  Classification: <span class="term-warn">DANGER</span>
+  strategy            closes  pnl_tao  win_rate  sharpe
+  -----------------   ------  -------  --------  ------
+  momentum_rotation       15  +37.556    100.0%  +2.674
+  mean_reversion          15  -13.677     26.7%  -0.589
 
-  Output:
-  {
-    "plan": { "type": "execute_trade", "amount": 100 },
-    "note": "DANGER action. Manual approval required."
-  }</code></pre>
+  Suggested ensemble weights:
+   momentum_rotation  ████████████████████████  95.5%
+   mean_reversion     █                          4.5%</code></pre>
       </div>
     </div>
     <div class="metrics">
       <div class="metric reveal delay-1">
-        <div class="metric-value">547</div>
+        <div class="metric-value">911</div>
         <div class="metric-label">tests passing on every commit</div>
       </div>
       <div class="metric reveal delay-2">
-        <div class="metric-value">10</div>
+        <div class="metric-value">12</div>
         <div class="metric-label">live smoke tests against real endpoints</div>
       </div>
       <div class="metric reveal delay-3">
@@ -238,8 +292,8 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
         <div class="metric-label">Python versions covered in CI</div>
       </div>
       <div class="metric reveal delay-4">
-        <div class="metric-value">0</div>
-        <div class="metric-label">automated value-moving actions, by design</div>
+        <div class="metric-value">3</div>
+        <div class="metric-label">independent opt-ins required before any live broadcast</div>
       </div>
     </div>
   </div>
@@ -306,10 +360,10 @@ tao-swarm --live run --task '{"type": "subnet_discovery"}'</code></pre>
         </div>
       </div>
       <div class="rm-row reveal delay-2">
-        <div class="rm-when">Next 3–6 months</div>
+        <div class="rm-when">Delivered</div>
         <div class="rm-what">
-          <h3>Hardening &amp; auto-trading mode</h3>
-          <p>Wire the remaining template-stage agents to real data sources. Build out the opt-in <code>AUTO_TRADING</code> path with kill-switch, position cap, and daily-loss-limit. Add typed agent-output artifacts. Expand the live smoke suite.</p>
+          <h3>Auto-trading pipeline + adaptive learning</h3>
+          <p>Full <code>AUTO_TRADING</code> path is shipped: encrypted keystore, three-stage live opt-in, cold-start chain reconciliation, slippage controls, post-broadcast verification, dashboard panel with halt button, strategy plug-in framework, two built-in strategies (momentum + mean-reversion), and an adaptive ensemble that re-weights toward winners. 911 tests, paper-default. The "next 3–6 months" target landed early.</p>
         </div>
       </div>
       <div class="rm-row reveal delay-3">
