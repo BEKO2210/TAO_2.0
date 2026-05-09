@@ -10,6 +10,7 @@ SAFETY: All trading actions are CAUTION or DANGER. No real trades.
 
 import logging
 import time
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,10 @@ class MarketTradeAgent:
                 - use_mock_data: Use mock data (default True)
                 - analysis_timeframe: Default timeframe (default "1d")
                 - risk_tolerance: Risk level (default "medium")
+                - market_collector: Pre-built ``MarketDataCollector``
+                  (mainly for tests / dependency injection).
+                - market_db_path: SQLite cache path for the collector
+                  (default ``data/market_cache.db``).
         """
         self.config: dict = config
         self._status: str = "idle"
@@ -49,6 +54,10 @@ class MarketTradeAgent:
         self._risk_tolerance: str = config.get("risk_tolerance", "medium")
         self._trade_log: list[dict] = []
         self._analysis_history: list[dict] = []
+        # Lazily-instantiated market collector. Tests can inject one
+        # via config["market_collector"]; otherwise we build one with
+        # config-derived settings on first use.
+        self._market_collector: Any = config.get("market_collector")
 
         if not self._paper_trading:
             logger.warning(
@@ -326,40 +335,95 @@ class MarketTradeAgent:
             "trades": trades[-limit:],
         }
 
+    def _get_market_collector(self) -> Any:
+        """
+        Lazily build / return the ``MarketDataCollector``.
+
+        Tests can inject one via ``config["market_collector"]``. Defers
+        the import so the agent module is still cheap to import without
+        the collector's transitive deps (``requests`` + sqlite cache).
+        """
+        if self._market_collector is None:
+            from src.collectors.market_data import MarketDataCollector
+            self._market_collector = MarketDataCollector({
+                "use_mock_data": self._use_mock,
+                "db_path": self.config.get(
+                    "market_db_path", "data/market_cache.db",
+                ),
+            })
+        return self._market_collector
+
     def _get_price_data(self, symbol: str, timeframe: str) -> dict:
         """
-        Get price data for a symbol.
+        Get price data for a symbol via the ``MarketDataCollector``.
+
+        Returns the agent-shaped dict (``current`` / ``change_24h_pct``
+        / etc.) that downstream helpers (``_calculate_volatility``,
+        ``_generate_trade_ideas``) expect, populated from the
+        collector's richer payload. Falls back to deterministic mock
+        when the collector errors out so trade-idea generation never
+        crashes the agent.
 
         Args:
-            symbol: Token symbol
-            timeframe: Time period
+            symbol: Token symbol (only TAO is supported live; other
+                symbols still produce deterministic mock data).
+            timeframe: Time period (carried through for log /
+                downstream consumers).
 
         Returns:
-            Price data dictionary
+            Price data dictionary with keys ``symbol``, ``current``,
+            ``open_24h``, ``high_24h``, ``low_24h``, ``change_24h_pct``,
+            ``change_24h_value``, ``source``, ``_meta`` (from collector
+            when live).
         """
-        if self._use_mock:
+        if symbol.upper() != "TAO":
             return self._get_mock_price_data(symbol, timeframe)
-
         try:
-            import requests
-            # CoinGecko API for TAO
-            url = (
-                "https://api.coingecko.com/api/v3/simple/price"
-                "?ids=bittensor&vs_currencies=usd&include_24hr_change=true"
-            )
-            resp = requests.get(url, timeout=10)
-            data = resp.json()
-            tao_data = data.get("bittensor", {})
-
-            return {
-                "symbol": symbol,
-                "current": tao_data.get("usd", 0),
-                "change_24h_pct": tao_data.get("usd_24h_change", 0),
-                "source": "coingecko",
-            }
+            collector = self._get_market_collector()
+            payload = collector.get_tao_price()
         except Exception as e:
-            logger.error("Price fetch failed: %s", e)
+            logger.warning(
+                "MarketDataCollector unavailable (%s); falling back to mock",
+                e,
+            )
             return self._get_mock_price_data(symbol, timeframe)
+
+        if "error" in payload:
+            logger.warning(
+                "MarketDataCollector returned error: %s; falling back to mock",
+                payload["error"],
+            )
+            mock = self._get_mock_price_data(symbol, timeframe)
+            mock["_meta"] = {
+                "mode": "mock",
+                "fallback_reason": payload["error"],
+            }
+            return mock
+
+        current = payload.get("price_usd", 0.0) or 0.0
+        change_pct = payload.get("change_24h_pct", 0.0) or 0.0
+        # CoinGecko ``simple/price`` doesn't expose intraday high/low,
+        # so derive a defensive estimate from the 24 h change. This
+        # keeps ``_calculate_volatility`` honest (range_pct ≈
+        # |change_pct|) instead of reporting 0 % volatility for live
+        # data. Consumers that need exact OHLC should call
+        # ``MarketDataCollector.get_historical_data`` directly.
+        change_factor = change_pct / 100.0
+        open_24h = round(current / (1 + change_factor), 6) if (1 + change_factor) else current
+        high_24h = round(max(current, open_24h) * (1 + abs(change_factor) * 0.25), 6)
+        low_24h = round(min(current, open_24h) * (1 - abs(change_factor) * 0.25), 6)
+
+        return {
+            "symbol": symbol,
+            "current": current,
+            "open_24h": open_24h,
+            "high_24h": high_24h,
+            "low_24h": low_24h,
+            "change_24h_pct": change_pct,
+            "change_24h_value": round(current - open_24h, 6),
+            "source": "coingecko",
+            "_meta": payload.get("_meta", {}),
+        }
 
     def _get_mock_price_data(self, symbol: str, timeframe: str) -> dict:
         """Generate mock price data."""
@@ -381,16 +445,22 @@ class MarketTradeAgent:
 
     def _get_volume_data(self, symbol: str, timeframe: str) -> dict:
         """
-        Get volume data for a symbol.
+        Get volume data for a symbol via the ``MarketDataCollector``.
+
+        Falls back to deterministic mock when the collector errors out
+        or the symbol isn't TAO, so downstream trade-idea generation
+        never crashes.
 
         Args:
-            symbol: Token symbol
-            timeframe: Time period
+            symbol: Token symbol (only TAO is live).
+            timeframe: Time period (carried for log context).
 
         Returns:
-            Volume data dictionary
+            Volume data dictionary with keys ``volume_24h_usd``,
+            ``volume_change_pct``, ``avg_daily_volume``, ``source``.
         """
-        if self._use_mock:
+
+        def _mock() -> dict:
             import hashlib
             h = hashlib.sha256(f"{symbol}vol{timeframe}".encode()).hexdigest()
             volume_24h = round(1000000 + (int(h[:6], 16) % 10000000), 2)
@@ -401,7 +471,31 @@ class MarketTradeAgent:
                 "source": "mock",
             }
 
-        return {"volume_24h_usd": 0, "source": "unknown"}
+        if symbol.upper() != "TAO":
+            return _mock()
+        try:
+            collector = self._get_market_collector()
+            payload = collector.get_volume()
+        except Exception as e:
+            logger.warning(
+                "MarketDataCollector volume unavailable (%s); mock fallback", e,
+            )
+            return _mock()
+
+        if "error" in payload:
+            logger.warning(
+                "MarketDataCollector volume error: %s; mock fallback",
+                payload["error"],
+            )
+            return _mock()
+
+        v24 = payload.get("volume_24h_usd", 0.0) or 0.0
+        return {
+            "volume_24h_usd": v24,
+            "volume_change_pct": payload.get("volume_change_24h", 0.0) or 0.0,
+            "avg_daily_volume": round(v24 * 0.9, 2),
+            "source": "coingecko",
+        }
 
     def _calculate_volatility(self, price_data: dict) -> dict:
         """
