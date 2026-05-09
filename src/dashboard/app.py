@@ -38,9 +38,27 @@ except ImportError:
     STREAMLIT_AVAILABLE = False
     logger.warning("streamlit, pandas, or plotly not installed. Dashboard unavailable.")
     logger.warning("Install: pip install streamlit pandas plotly")
-    # Create dummy module for importability
+
+    # Create dummy modules so the file imports cleanly without streamlit
+    # (lets us unit-test the data-fetch helpers in CI without dragging in
+    # the full UI dep tree). Decorator-style callables return a
+    # passthrough so ``@st.cache_data(ttl=60)`` works on functions.
+    def _passthrough_decorator(*args, **kwargs):
+        if len(args) == 1 and callable(args[0]) and not kwargs:
+            # Bare ``@deco`` form
+            return args[0]
+        # Parameterised ``@deco(...)`` form
+        def _wrap(fn):
+            return fn
+        return _wrap
+
     class _DummySt:
-        def __getattr__(self, name): return lambda *a, **k: None
+        cache_data = staticmethod(_passthrough_decorator)
+        cache_resource = staticmethod(_passthrough_decorator)
+
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+
     st = _DummySt()
     pd = _DummySt()
     px = _DummySt()
@@ -122,8 +140,37 @@ st.markdown(DARK_CSS, unsafe_allow_html=True)
 # ── Constants ─────────────────────────────────────────────────────────────
 
 DATA_DIR = Path(os.environ.get("TAO_DATA_DIR", "data"))
+
+
+def _discover_chain_db() -> Path:
+    """
+    Pick the best chain cache file to read.
+
+    PR #10 namespaced the chain cache by network, so the file may now
+    live at ``chain_cache.mock.db`` / ``chain_cache.finney.db`` etc.
+    Preference: an explicit ``TAO_NETWORK`` env var beats anything
+    else; otherwise prefer ``finney`` (real data) > ``test`` > ``mock``
+    > the legacy un-namespaced ``chain_cache.db``. Returns the legacy
+    path when nothing exists, so render_system_status still surfaces
+    a clear "missing" row.
+    """
+    env_net = os.environ.get("TAO_NETWORK", "").strip().lower()
+    candidates: list[str] = []
+    if env_net:
+        candidates.append(f"chain_cache.{env_net}.db")
+    for net in ("finney", "test", "mock"):
+        candidates.append(f"chain_cache.{net}.db")
+    candidates.append("chain_cache.db")  # legacy
+
+    for name in candidates:
+        path = DATA_DIR / name
+        if path.exists():
+            return path
+    return DATA_DIR / "chain_cache.db"
+
+
 DB_FILES = {
-    "chain": DATA_DIR / "chain_cache.db",
+    "chain": _discover_chain_db(),
     "market": DATA_DIR / "market_cache.db",
     "wallet": DATA_DIR / "wallet_watch.db",
     "github": DATA_DIR / "github_cache.db",
