@@ -53,13 +53,12 @@ def test_helper_returns_empty_when_no_report_published():
     # An empty hardware_report dict is still a dict; helper should
     # return zeroed values, not {}, since the report exists.
     profile = hardware_profile_from_context(a)
-    assert profile == {
-        "ram_gb": 0,
-        "has_gpu": False,
-        "vram_gb": 0,
-        "cpu_cores": 0,
-        "_source": "system_check_agent.hardware_report",
-    }
+    # Core fields the miner / validator agents actually read.
+    assert profile["ram_gb"] == 0
+    assert profile["has_gpu"] is False
+    assert profile["vram_gb"] == 0
+    assert profile["cpu_cores"] == 0
+    assert profile["_source"] == "system_check_agent.hardware_report"
 
 
 def test_helper_translates_system_check_shape():

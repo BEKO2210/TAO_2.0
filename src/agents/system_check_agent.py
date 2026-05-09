@@ -9,6 +9,7 @@ Inspects hardware (CPU, RAM, GPU, VRAM, Disk) and software
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 from typing import Any
@@ -342,36 +343,82 @@ class SystemCheckAgent:
                 logger.debug("Fallback RAM check failed: %s", e2)
         return {"total_gb": 0, "available_gb": 0}
 
+    # nvidia-smi --query-gpu fields requested per device. Order matters —
+    # the parser below indexes into the CSV row by position.
+    _NVIDIA_SMI_FIELDS = (
+        "index",
+        "name",
+        "driver_version",
+        "memory.total",
+        "memory.used",
+        "memory.free",
+        "compute_cap",
+        "temperature.gpu",
+    )
+
     def _get_gpu_info(self) -> dict:
-        """Get GPU information via nvidia-smi."""
+        """
+        Get rich per-device GPU information via ``nvidia-smi``.
+
+        Returns a dict with the legacy fields ``available``, ``count``,
+        ``gpus`` (list), and ``vram_gb`` (sum across GPUs) so the
+        miner/validator hardware adapter keeps working unchanged. The
+        per-GPU dicts now also carry ``index``, ``vram_used_mb``,
+        ``vram_free_mb``, ``compute_cap``, and ``temperature_c``, plus a
+        top-level ``driver_version`` for the whole machine — useful for
+        diagnosing CUDA/driver mismatches without a separate query.
+        """
+        empty = {"available": False, "count": 0, "gpus": [], "vram_gb": 0}
         try:
             result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+                [
+                    "nvidia-smi",
+                    f"--query-gpu={','.join(self._NVIDIA_SMI_FIELDS)}",
+                    "--format=csv,noheader,nounits",
+                ],
                 capture_output=True, text=True, timeout=10,
             )
-            if result.returncode == 0 and result.stdout.strip():
-                lines = result.stdout.strip().split("\n")
-                gpus = []
-                total_vram = 0
-                for line in lines:
-                    parts = line.split(",")
-                    if len(parts) >= 2:
-                        name = parts[0].strip()
-                        vram_str = parts[1].strip().replace(" MiB", "").replace(" MB", "")
-                        try:
-                            vram = int(vram_str)
-                            vram_gb = round(vram / 1024, 2)
-                            total_vram += vram_gb
-                            gpus.append({"name": name, "vram_gb": vram_gb})
-                        except ValueError:
-                            gpus.append({"name": name, "vram_gb": 0})
+            if result.returncode != 0 or not result.stdout.strip():
+                return empty
 
-                return {
-                    "available": len(gpus) > 0,
-                    "count": len(gpus),
-                    "gpus": gpus,
-                    "vram_gb": total_vram,
-                }
+            gpus: list[dict] = []
+            total_vram_mb = 0
+            driver_version: str | None = None
+            for line in result.stdout.strip().split("\n"):
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < len(self._NVIDIA_SMI_FIELDS):
+                    continue
+                idx, name, drv, vt, vu, vf, cc, temp = parts[:8]
+                try:
+                    vram_total_mb = int(vt)
+                    vram_used_mb = int(vu)
+                    vram_free_mb = int(vf)
+                except ValueError:
+                    # Some fields can come back as "[Not Supported]" on
+                    # consumer cards. Skip rows we can't trust rather
+                    # than reporting fabricated zeros.
+                    continue
+                gpus.append({
+                    "index": int(idx) if idx.isdigit() else 0,
+                    "name": name,
+                    "vram_total_mb": vram_total_mb,
+                    "vram_used_mb": vram_used_mb,
+                    "vram_free_mb": vram_free_mb,
+                    # Legacy field — sum into vram_gb below.
+                    "vram_gb": round(vram_total_mb / 1024, 2),
+                    "compute_cap": cc if cc and cc != "[Not Supported]" else None,
+                    "temperature_c": int(temp) if temp.isdigit() else None,
+                })
+                total_vram_mb += vram_total_mb
+                driver_version = drv  # same on every line
+
+            return {
+                "available": len(gpus) > 0,
+                "count": len(gpus),
+                "gpus": gpus,
+                "driver_version": driver_version,
+                "vram_gb": round(total_vram_mb / 1024, 2),
+            }
         except FileNotFoundError:
             logger.debug("nvidia-smi not found - no NVIDIA GPU")
         except Exception as e:
@@ -451,36 +498,96 @@ class SystemCheckAgent:
             return {"installed": True, "version": "unknown", "path": path, "ready": False, "checked": True}
 
     def _get_cuda_info(self) -> dict:
-        """Get CUDA installation info."""
+        """
+        Get CUDA installation info.
+
+        Detection order, most-authoritative first:
+
+        1. ``nvidia-smi`` — parses the CUDA Version printed in the
+           default header. This reports the **driver-installed** CUDA
+           runtime, which is what the kernel will actually load.
+        2. ``nvcc --version`` — reports the **toolkit** version, which
+           may be older than the driver runtime if both are installed.
+        3. ``torch.cuda.is_available()`` — last-resort fall-back for
+           environments where only PyTorch ships with a bundled
+           runtime (e.g. pip-installed wheels in a container).
+
+        All three sources are reported when available so a downstream
+        consumer can spot driver/toolkit mismatches.
+        """
+        sources: dict[str, Any] = {}
+        version: str | None = None
+
+        # 1) nvidia-smi default output carries "CUDA Version: 12.4"
+        nv_version = self._cuda_version_from_nvidia_smi()
+        if nv_version is not None:
+            sources["nvidia_smi"] = nv_version
+            version = nv_version
+
+        # 2) nvcc toolkit
         try:
             result = subprocess.run(
                 ["nvcc", "--version"], capture_output=True, text=True, timeout=5,
             )
             if result.returncode == 0:
-                return {
-                    "available": True,
-                    "version": result.stdout.strip().split("\n")[-2] if len(result.stdout.strip().split("\n")) > 1 else "unknown",
-                    "ready": True,
-                }
+                # nvcc output's last informative line typically reads
+                # "Cuda compilation tools, release 12.4, V12.4.131"
+                lines = [l.strip() for l in result.stdout.strip().split("\n") if l.strip()]
+                nvcc_line = next(
+                    (l for l in lines if "release" in l.lower()),
+                    lines[-1] if lines else "unknown",
+                )
+                sources["nvcc"] = nvcc_line
+                version = version or nvcc_line
         except FileNotFoundError:
-            logger.debug("nvcc not found - CUDA not installed")
+            logger.debug("nvcc not found")
         except Exception as e:
-            logger.debug("CUDA check failed: %s", e)
+            logger.debug("nvcc check failed: %s", e)
 
-        # Try checking PyTorch CUDA
+        # 3) PyTorch fallback
         try:
-            import torch
+            import torch  # type: ignore[import-not-found]
             if torch.cuda.is_available():
-                return {
-                    "available": True,
-                    "version": f"PyTorch CUDA {torch.version.cuda}",
-                    "ready": True,
-                }
+                pt_version = f"PyTorch CUDA {torch.version.cuda}"
+                sources["pytorch"] = pt_version
+                version = version or pt_version
         except ImportError:
             pass
+        except Exception as e:  # pragma: no cover - torch import-time errors
+            logger.debug("torch CUDA check failed: %s", e)
 
+        available = bool(sources)
         return {
-            "available": False,
-            "version": None,
-            "ready": False,
+            "available": available,
+            "version": version,
+            "sources": sources,
+            "ready": available,
         }
+
+    @staticmethod
+    def _cuda_version_from_nvidia_smi() -> str | None:
+        """
+        Parse the CUDA runtime version out of ``nvidia-smi``'s header.
+
+        The default ``nvidia-smi`` invocation prints a banner like::
+
+            +-----------------------------------------------------------+
+            | NVIDIA-SMI 550.54.15  Driver Version: 550.54.15  CUDA Version: 12.4 |
+            +-----------------------------------------------------------+
+
+        Returns the matched version string or ``None`` if nvidia-smi
+        isn't installed or the line wasn't found.
+        """
+        try:
+            result = subprocess.run(
+                ["nvidia-smi"], capture_output=True, text=True, timeout=10,
+            )
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            logger.debug("nvidia-smi (header) failed: %s", e)
+            return None
+        if result.returncode != 0:
+            return None
+        match = re.search(r"CUDA Version:\s*([\d.]+)", result.stdout)
+        return match.group(1) if match else None
