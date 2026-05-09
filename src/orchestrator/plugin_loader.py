@@ -49,6 +49,7 @@ Then::
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 import inspect
@@ -185,7 +186,16 @@ def _load_path_module(
     summary: PluginLoadSummary,
 ) -> None:
     """Import a ``*_agent.py`` file by path and register the agent class."""
-    module_name = f"_tao_plugin_{py_file.stem}"
+    # Hash the parent directory into the module name so two plug-ins
+    # with the same filename in different directories don't collide
+    # in ``sys.modules`` (where the second would silently displace the
+    # first's module-level globals — which matters because we fall
+    # back to ``sys.modules.get(agent_cls.__module__).AGENT_NAME``
+    # when the class itself doesn't declare AGENT_NAME).
+    parent_tag = hashlib.sha1(
+        str(py_file.parent).encode("utf-8", "replace")
+    ).hexdigest()[:8]
+    module_name = f"_tao_plugin_{py_file.stem}_{parent_tag}"
     try:
         spec = importlib.util.spec_from_file_location(module_name, py_file)
         if spec is None or spec.loader is None:
@@ -332,6 +342,18 @@ def _instantiate_and_register(
         summary.skipped.append({
             "source": source, "target": agent_cls.__name__,
             "reason": "missing AGENT_NAME",
+        })
+        return
+    if not isinstance(name, str):
+        summary.skipped.append({
+            "source": source, "target": agent_cls.__name__,
+            "reason": f"AGENT_NAME must be str, got {type(name).__name__}",
+        })
+        return
+    if not name.strip() or name != name.strip():
+        summary.skipped.append({
+            "source": source, "target": agent_cls.__name__,
+            "reason": "AGENT_NAME must be non-empty and free of leading/trailing whitespace",
         })
         return
 
