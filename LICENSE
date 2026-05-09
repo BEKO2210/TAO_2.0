@@ -1,86 +1,87 @@
-Business Source License 1.1
+PROPRIETARY LICENSE — TAO Swarm
 
-Licensor:                 BEKO2210 (TAO_2.0 contributors)
-Licensed Work:            TAO_2.0 — Bittensor Multi-Agent Intelligence System
-                          (this repository at the time of distribution)
-Additional Use Grant:     You may use, copy, modify, distribute, and create
-                          derivative works of the Licensed Work for the
-                          following uses:
+Copyright (c) 2026 BEKO2210. All rights reserved.
 
-                          (A) Non-Production Use:
-                              personal, educational, research, or
-                              evaluation use by an individual or by a
-                              team of up to five (5) people; not used to
-                              operate a service made available to third
-                              parties.
+This software, including its source code, object code, documentation,
+configuration files, branding assets, design assets, and any
+accompanying materials (collectively, the "Licensed Work"), is the
+proprietary intellectual property of the copyright holder named above
+(the "Licensor").
 
-                          (B) Personal Single-User Automated Trading:
-                              automated trading, staking, signing, or
-                              other value-moving on-chain decisions are
-                              permitted ONLY when:
-                                (1) the operator is the same natural
-                                    person who owns the on-chain assets
-                                    being moved;
-                                (2) the software is not made available
-                                    to any third party (no hosting, no
-                                    SaaS, no group operation);
-                                (3) the operator complies with all
-                                    applicable laws in their juris-
-                                    diction (securities, AML/KYC,
-                                    tax, exchange terms);
-                                (4) the operator has read and accepts
-                                    the risks listed in DISCLAIMER.md.
+The Licensed Work is NOT open-source software. It is NOT
+source-available software. It is NOT released under the MIT, Apache,
+GPL, BSD, BUSL, or any other public licence. The presence of the
+source code in a public source-control repository does NOT grant any
+licence to use, copy, execute, modify, distribute, sublicense, or
+create derivative works.
 
-                          Any other use — including but not limited to
-                          operating an automated-trading service for
-                          third parties, embedding the software in a
-                          paid product, hosting a multi-user instance,
-                          managing other people's funds, or any
-                          commercial deployment — requires a separate
-                          commercial license from the Licensor.
+By accessing the Licensed Work you acknowledge that:
 
-Change Date:              2030-01-01
+1. NO LICENCE IS GRANTED. No right, title, or interest in the
+   Licensed Work is conveyed to you, by implication, estoppel, or
+   otherwise. All rights are reserved by the Licensor.
 
-Change License:           Apache License, Version 2.0
+2. NO USE WITHOUT WRITTEN PERMISSION. You may not install, run,
+   compile, execute, deploy, host, modify, fork, redistribute,
+   sublicense, sell, lease, lend, embed, mirror, translate, or
+   create derivative works of the Licensed Work without a separate,
+   express, written licence agreement signed by the Licensor.
 
-For information about alternative licensing arrangements for the Licensed
-Work, please contact the Licensor through the repository's GitHub issues
-tracker.
+3. NO REVERSE ENGINEERING. To the extent permitted by applicable
+   mandatory law, you may not reverse engineer, decompile,
+   disassemble, or otherwise attempt to derive the source code or
+   underlying ideas, algorithms, or trade secrets of the Licensed
+   Work, except to the extent that such activity is expressly
+   permitted by applicable law notwithstanding this restriction.
 
-Notice
+4. NO TRADEMARK GRANT. The names, logos, and brand assets of TAO
+   Swarm, including the Logo file in this repository, are trademarks
+   or unregistered marks of the Licensor and are not licensed for
+   any use under this Licence. No nominative-fair-use or
+   editorial-use rights are granted beyond those mandated by
+   applicable law.
 
-The Business Source License (this document, or the "License") is not an
-Open Source license. However, the Licensed Work will eventually be made
-available under an Open Source license, as stated in this License.
+5. EVALUATION VIEWING IS NOT A LICENCE. You may read the source code
+   that the Licensor chooses to publish in a public repository for
+   the sole purpose of evaluating the software, satisfying personal
+   curiosity, or assessing it before requesting a commercial
+   licence. Such viewing does NOT entitle you to compile, run, or
+   integrate any portion of the Licensed Work in any environment.
 
-License text
+6. PRIOR LICENCES, IF ANY. Earlier published versions of the
+   Licensed Work may have been distributed under a different
+   licence (for example MIT or Business Source Licence 1.1). Those
+   earlier licences continue to apply to the snapshots they covered
+   and to copies obtained under them, in accordance with their own
+   terms. Any version of the Licensed Work obtained from this
+   repository on or after the date this Licence was committed is
+   governed exclusively by this Licence.
 
-The full canonical text of the Business Source License 1.1 is published
-at https://mariadb.com/bsl11/ and is incorporated by reference into this
-file. By using, copying, or distributing the Licensed Work, you agree to
-the terms of the canonical Business Source License 1.1 as supplemented by
-the parameters above (Licensor, Licensed Work, Additional Use Grant,
-Change Date, Change License).
+7. NO WARRANTY. The Licensed Work is provided to evaluators on an
+   "AS IS" basis, without warranty of any kind, express or implied,
+   including but not limited to warranties of merchantability,
+   fitness for a particular purpose, title, or non-infringement.
 
-Summary of obligations (informational, not a substitute for the canonical text)
+8. LIMITATION OF LIABILITY. To the fullest extent permitted by
+   applicable law, the Licensor shall not be liable for any direct,
+   indirect, incidental, consequential, special, exemplary, or
+   punitive damages arising from or in connection with the Licensed
+   Work or the inability to use it, even if the Licensor has been
+   advised of the possibility of such damages. See DISCLAIMER.md
+   for additional safety, financial-risk, and compliance notices.
 
-  1. You may make, run, copy, distribute, and modify the Licensed Work
-     for Non-Production Use as defined in the Additional Use Grant.
+9. SEVERABILITY. If any provision of this Licence is held to be
+   unenforceable, the remaining provisions remain in full force.
 
-  2. Effective on the Change Date, the Licensor will license the
-     Licensed Work under the Change License (Apache License, Version
-     2.0), and the restrictions in this License will no longer apply.
+10. GOVERNING LAW. This Licence is governed by the law of the
+    Federal Republic of Germany, without regard to conflict-of-law
+    principles. Exclusive venue for disputes, to the extent
+    permitted by mandatory law, is the seat of the Licensor.
 
-  3. All copies of original or modified Licensed Work, and any work
-     based on the Licensed Work, must include a complete copy of this
-     License.
+To request a commercial licence, contact the Licensor through the
+repository's GitHub issues tracker or via GitHub Security Advisory
+for confidential matters.
 
-  4. The Licensed Work is provided "AS IS", without warranty of any
-     kind. The Licensor disclaims all liability for damages arising
-     from use of the Licensed Work to the fullest extent permitted by
-     applicable law. See DISCLAIMER.md for additional safety and
-     financial-risk disclosures specific to this project.
-
-  5. Any production deployment, hosted service, or commercial use
-     beyond the Additional Use Grant requires a separate written
-     commercial license from the Licensor.
+UNAUTHORISED USE OF THE LICENSED WORK MAY GIVE RISE TO CIVIL AND
+CRIMINAL LIABILITY UNDER APPLICABLE COPYRIGHT, TRADE-SECRET, AND
+COMPUTER-MISUSE LAWS.

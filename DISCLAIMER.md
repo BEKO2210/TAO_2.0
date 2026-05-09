@@ -78,11 +78,11 @@ acknowledge:
 - **You are solely responsible for keeping the bot's behaviour
   legal in your jurisdiction.** See section 7.
 
-The software's `AUTO_TRADING` mode is intended for the **personal,
-single-user, single-key** scenario described in `LICENSE` Additional
-Use Grant (B). Any other use — including running it for someone
-else's funds, hosting it as a service, or embedding it in a product
-— is outside the licence and outside this disclaimer.
+The software's `AUTO_TRADING` mode is intended for use **only by
+the Licensor** and any individual the Licensor has expressly
+licensed in writing under a separate proprietary licence. Anyone
+else who installs, runs, or modifies the software is acting
+without a licence — see `LICENSE`.
 
 ## 5. Read-only and write-path guards
 
