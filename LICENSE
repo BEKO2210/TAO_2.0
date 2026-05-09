@@ -1,21 +1,71 @@
-MIT License
+Business Source License 1.1
 
-Copyright (c) 2026 TAO_2.0 contributors
+Licensor:                 BEKO2210 (TAO_2.0 contributors)
+Licensed Work:            TAO_2.0 — Bittensor Multi-Agent Intelligence System
+                          (this repository at the time of distribution)
+Additional Use Grant:     You may use, copy, modify, distribute, and create
+                          derivative works of the Licensed Work for
+                          Non-Production Use only.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+                          "Non-Production Use" means use that is:
+                            (a) personal, educational, research, or
+                                evaluation use by an individual or by a
+                                team of up to five (5) people;
+                            (b) not used to operate a service made
+                                available to third parties for a fee or
+                                other consideration;
+                            (c) not used to make automated trading,
+                                staking, signing, or similar value-moving
+                                decisions on behalf of yourself or others;
+                            (d) not embedded in a product or system that
+                                is sold, licensed, hosted, or otherwise
+                                distributed to third parties.
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+                          Production Use of any kind requires a separate
+                          commercial license from the Licensor.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+Change Date:              2030-01-01
+
+Change License:           Apache License, Version 2.0
+
+For information about alternative licensing arrangements for the Licensed
+Work, please contact the Licensor through the repository's GitHub issues
+tracker.
+
+Notice
+
+The Business Source License (this document, or the "License") is not an
+Open Source license. However, the Licensed Work will eventually be made
+available under an Open Source license, as stated in this License.
+
+License text
+
+The full canonical text of the Business Source License 1.1 is published
+at https://mariadb.com/bsl11/ and is incorporated by reference into this
+file. By using, copying, or distributing the Licensed Work, you agree to
+the terms of the canonical Business Source License 1.1 as supplemented by
+the parameters above (Licensor, Licensed Work, Additional Use Grant,
+Change Date, Change License).
+
+Summary of obligations (informational, not a substitute for the canonical text)
+
+  1. You may make, run, copy, distribute, and modify the Licensed Work
+     for Non-Production Use as defined in the Additional Use Grant.
+
+  2. Effective on the Change Date, the Licensor will license the
+     Licensed Work under the Change License (Apache License, Version
+     2.0), and the restrictions in this License will no longer apply.
+
+  3. All copies of original or modified Licensed Work, and any work
+     based on the Licensed Work, must include a complete copy of this
+     License.
+
+  4. The Licensed Work is provided "AS IS", without warranty of any
+     kind. The Licensor disclaims all liability for damages arising
+     from use of the Licensed Work to the fullest extent permitted by
+     applicable law. See DISCLAIMER.md for additional safety and
+     financial-risk disclosures specific to this project.
+
+  5. Any production deployment, hosted service, or commercial use
+     beyond the Additional Use Grant requires a separate written
+     commercial license from the Licensor.

@@ -7,7 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed — Licensing & legal hardening
+
+- **Switched from MIT to Business Source License 1.1 (BUSL-1.1).**
+  Rationale: until the project reaches its next milestone, the
+  authors want explicit control over production / commercial /
+  hosting deployments while still allowing free Non-Production Use
+  (personal, research, evaluation, teams up to 5 people, mock-mode
+  development, plug-in writing). BUSL-1.1 is the standard
+  source-available licence that fits this exact pattern (used by
+  HashiCorp, MariaDB, Sentry, etc.).
+- **Change Date: 2030-01-01.** On that date the licence
+  automatically converts to Apache License 2.0 — the project
+  becomes fully open source at that point and the
+  Non-Production-Use restriction lifts.
+- **Additional Use Grant** in `LICENSE` defines Non-Production Use
+  exhaustively: personal/educational/research/evaluation, teams ≤
+  5 people, no third-party hosting, no automated value-moving
+  decisions, no embedding in distributed products.
+- **New `DISCLAIMER.md`** — comprehensive risk, liability, and
+  compliance disclosures covering: not-financial-advice,
+  cryptocurrency volatility, no-automated-value-movement guarantees,
+  read-only assumptions, third-party endpoint terms, no-warranty,
+  user-responsibility-for-compliance, production-use boundaries,
+  upstream-dependency-licences.
+- **README.md** restructured with a top-level "Lizenz & rechtlicher
+  Status" section that names what's allowed / not allowed without
+  the user having to open the licence file. Quick Start now uses
+  the `tao-swarm` console-script and shows live-mode examples
+  alongside mock. Schnellüberblick refreshed to reflect the actual
+  state: 547 tests, 10 live smokes, real chain reads, BUSL.
+- `pyproject.toml` classifier updated from
+  `License :: OSI Approved :: MIT License` to
+  `License :: Other/Proprietary License` (BUSL is source-available,
+  not OSI-approved Open Source).
 
 ## [1.0.0] — 2026-05-09
 
