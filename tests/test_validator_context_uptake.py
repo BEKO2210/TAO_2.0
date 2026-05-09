@@ -13,16 +13,13 @@ real specs; explicit config still wins; safety properties hold.
 
 from __future__ import annotations
 
-import pytest
-
-from src.orchestrator import AgentContext, SwarmOrchestrator
 from src.agents import (
-    SystemCheckAgent,
     MinerEngineeringAgent,
+    SystemCheckAgent,
     ValidatorEngineeringAgent,
 )
 from src.agents._hardware import hardware_profile_from_context
-
+from src.orchestrator import AgentContext, SwarmOrchestrator
 
 # ---------------------------------------------------------------------------
 # Shared adapter unit-level
@@ -152,8 +149,8 @@ def test_miner_and_validator_share_same_system_check_report():
 
     orch.execute_task({"type": "system_check"})
 
-    miner_out = orch.execute_task({"type": "miner_setup", "subnet_id": 12})
-    validator_out = orch.execute_task({"type": "validator_setup", "subnet_id": 12})
+    orch.execute_task({"type": "miner_setup", "subnet_id": 12})
+    orch.execute_task({"type": "validator_setup", "subnet_id": 12})
 
     miner_profile = orch.agents["miner_engineering_agent"]._hardware_profile
     validator_profile = orch.agents["validator_engineering_agent"]._hardware_profile

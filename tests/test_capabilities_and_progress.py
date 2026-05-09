@@ -17,12 +17,9 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from src.orchestrator import SwarmOrchestrator
 from src.orchestrator.capabilities import Capability, discover_capabilities
 from src.orchestrator.progress import _OrchestratorProgressChannel
-
 
 # ---------------------------------------------------------------------------
 # Capability dataclass + discover_capabilities

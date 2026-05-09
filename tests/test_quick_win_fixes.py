@@ -20,7 +20,6 @@ from src.agents.training_experiment_agent import TrainingExperimentAgent
 from src.orchestrator import SwarmOrchestrator
 from src.orchestrator.approval_gate import Classification
 
-
 # ---------------------------------------------------------------------------
 # B1 — TrainingExperimentAgent must run end-to-end without raising
 # ---------------------------------------------------------------------------
@@ -63,7 +62,7 @@ def test_blocked_result_classification_is_plain_string():
     assert cls == "DANGER"
     # The exact type matters for downstream JSON consumers — must be a plain
     # string, not a Classification enum instance.
-    assert type(cls) is str  # noqa: E721
+    assert type(cls) is str
 
 
 def test_blocked_plan_note_is_human_readable():
@@ -87,7 +86,7 @@ def test_success_result_classification_is_plain_string():
     out = orch.execute_task({"type": "system_check"})
     assert out["status"] == "success"
     assert out["classification"] == "SAFE"
-    assert type(out["classification"]) is str  # noqa: E721
+    assert type(out["classification"]) is str
 
 
 def test_validation_error_classification_is_plain_string():
@@ -96,7 +95,7 @@ def test_validation_error_classification_is_plain_string():
     out = orch.execute_task({})
     assert out["status"] == "error"
     assert out["classification"] == "SAFE"
-    assert type(out["classification"]) is str  # noqa: E721
+    assert type(out["classification"]) is str
 
 
 def test_blocked_result_is_json_serializable_without_default():

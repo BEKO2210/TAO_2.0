@@ -11,7 +11,7 @@ import logging
 import os
 import sqlite3
 import time
-from typing import Any, Optional
+from typing import Any
 
 from src.collectors._base import BaseCollector
 
@@ -41,10 +41,18 @@ def _try_import_bittensor() -> Any:
     """
     Lazily import the optional ``bittensor`` SDK.
 
+    Sets ``BT_READ_ONLY=1`` *before* the import so the SDK skips its
+    write-path bootstrap (wallet logger setup, signing helpers). The
+    docs at https://docs.learnbittensor.org/sdk/env-vars are explicit
+    that this env var must be present at import time. We default it
+    to ``"1"`` and only respect a user-supplied ``"0"`` if they've
+    deliberately set one — opt-out, not opt-in.
+
     Returns the module or ``None`` if the dep isn't installed. We
     swallow ImportError silently here — the caller decides whether
     that's a fall-back-to-mock condition or a hard error.
     """
+    os.environ.setdefault("BT_READ_ONLY", "1")
     try:
         import bittensor as bt  # type: ignore[import-not-found]
     except ImportError:
@@ -281,7 +289,7 @@ class ChainReadOnlyCollector(BaseCollector):
             """)
             conn.commit()
 
-    def _cache_get(self, table: str, key_col: str, key_val: int) -> Optional[dict]:
+    def _cache_get(self, table: str, key_col: str, key_val: int) -> dict | None:
         """Retrieve cached data if it has not expired."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(

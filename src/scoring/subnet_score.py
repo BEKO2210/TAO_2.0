@@ -15,7 +15,6 @@ import math
 import os
 import sqlite3
 import time
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +65,7 @@ class SubnetScorer:
     Produces a 0-100 score with detailed breakdowns and recommendations.
     """
 
-    def __init__(self, config: Optional[dict] = None) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the subnet scorer.
 
@@ -142,7 +141,6 @@ class SubnetScorer:
 
         vram = hardware.get("vram_gb", 0)
         ram = hardware.get("ram_gb", 0)
-        disk = hardware.get("disk_gb", 0)
         cost = hardware.get("estimated_cost_monthly_usd", 0)
 
         # VRAM scoring

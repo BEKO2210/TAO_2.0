@@ -23,15 +23,14 @@ from __future__ import annotations
 import pytest
 
 from src.orchestrator import (
-    AgentContext,
     ON_CONFLICT_ERROR,
     ON_CONFLICT_REPLACE,
     ON_CONFLICT_SKIP,
+    AgentContext,
     PluginLoadSummary,
     SwarmOrchestrator,
     load_plugins,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers — write a synthetic plug-in to disk for path-based loading
@@ -164,8 +163,10 @@ def test_env_var_paths_picked_up(tmp_path, monkeypatch):
 def test_pathsep_separated_env_var(tmp_path, monkeypatch):
     """Multiple paths in TAO_PLUGIN_PATHS, separated by os.pathsep."""
     import os
-    a = tmp_path / "a"; a.mkdir()
-    b = tmp_path / "b"; b.mkdir()
+    a = tmp_path / "a"
+    a.mkdir()
+    b = tmp_path / "b"
+    b.mkdir()
     _write_plugin(a, "left_agent.py", "left_agent", "LeftAgent")
     _write_plugin(b, "right_agent.py", "right_agent", "RightAgent")
     monkeypatch.setenv("TAO_PLUGIN_PATHS", f"{a}{os.pathsep}{b}")

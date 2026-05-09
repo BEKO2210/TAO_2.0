@@ -11,7 +11,6 @@ import os
 import re
 import sqlite3
 import time
-from typing import Optional
 from urllib.parse import urlparse
 
 import requests
@@ -109,7 +108,7 @@ class GitHubRepoCollector(BaseCollector):
             """)
             conn.commit()
 
-    def _cache_get(self, repo_key: str) -> Optional[dict]:
+    def _cache_get(self, repo_key: str) -> dict | None:
         """Get cached data if not expired."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(

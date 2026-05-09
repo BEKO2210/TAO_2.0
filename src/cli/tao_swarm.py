@@ -92,7 +92,7 @@ def _mode_banner(config: dict) -> str:
     """One-line banner showing which data source the command will use."""
     if config.get("use_mock_data", True):
         return click.style(
-            f"  MODE: mock (offline fixtures)  — pass --live for real data",
+            "  MODE: mock (offline fixtures)  — pass --live for real data",
             fg="yellow",
         )
     network = config.get("network", "finney")
@@ -362,7 +362,6 @@ def score(ctx, netuid, detailed, json_output):
         for criterion, value in result["breakdown"].items():
             weight = result["weights"][criterion]
             weighted = value * weight
-            bar_color = "green" if value >= 75 else "yellow" if value >= 50 else "red"
             click.echo(
                 f"    {criterion:20s} {value:>6.1f} x {weight:4.2f} = {weighted:>6.2f}"
             )
@@ -409,14 +408,14 @@ def watch(ctx, address, label):
 
     # Show balance
     balance = collector.get_balance(address)
-    click.echo(f"\n  Balance:")
+    click.echo("\n  Balance:")
     click.echo(f"    Free:      {balance.get('free', 0):.6f} TAO")
     click.echo(f"    Reserved:  {balance.get('reserved', 0):.6f} TAO")
     click.echo(f"    Total:     {balance.get('total', 0):.6f} TAO")
 
     # Show staking
     staking = collector.get_staking_info(address)
-    click.echo(f"\n  Staking:")
+    click.echo("\n  Staking:")
     click.echo(f"    Total Staked: {staking.get('total_staked', 0):.6f} TAO")
     click.echo(f"    Delegations:  {staking.get('num_delegations', 0)}")
     click.echo(f"    Est. APY:     {staking.get('estimated_apy_pct', 0):.2f}%")
@@ -447,7 +446,7 @@ def unwatch(ctx, address):
     if removed:
         click.echo(click.style(f"\n  Removed: {address[:20]}...", fg="green"))
     else:
-        click.echo(click.style(f"\n  Address not found in watch list", fg="yellow"))
+        click.echo(click.style("\n  Address not found in watch list", fg="yellow"))
 
     click.echo()
 
@@ -497,7 +496,7 @@ def market(ctx, days, json_output):
             click.echo(f"    {period:10s}: {click.style(f'{val:+.2f}%', fg=color)}")
 
         supply = market_data.get("supply", {})
-        click.echo(f"\n  Supply:")
+        click.echo("\n  Supply:")
         click.echo(f"    Circulating: {supply.get('circulating', 0):,.0f}")
         click.echo(f"    Total:       {supply.get('total', 0):,.0f}")
         click.echo(f"    Max:         {supply.get('max', 0):,.0f}")
@@ -779,7 +778,7 @@ def dashboard(ctx, port, host, no_browser):
     if no_browser:
         cmd.extend(["--server.headless", "true"])
 
-    click.echo(click.style(f"\n  Starting streamlit...", fg="green"))
+    click.echo(click.style("\n  Starting streamlit...", fg="green"))
     click.echo(f"  Command: {' '.join(cmd)}\n")
 
     try:
@@ -804,14 +803,24 @@ def capabilities(ctx, json_output, plugin_paths):
     now and which agent handles each one.
     """
     try:
-        from src.orchestrator import SwarmOrchestrator, load_plugins
         from src.agents import (
-            SystemCheckAgent, ProtocolResearchAgent, SubnetDiscoveryAgent,
-            SubnetScoringAgent, WalletWatchAgent, MarketTradeAgent,
-            RiskSecurityAgent, MinerEngineeringAgent, ValidatorEngineeringAgent,
-            TrainingExperimentAgent, InfraDevopsAgent, DashboardDesignAgent,
-            FullstackDevAgent, QATestAgent, DocumentationAgent,
+            DashboardDesignAgent,
+            DocumentationAgent,
+            FullstackDevAgent,
+            InfraDevopsAgent,
+            MarketTradeAgent,
+            MinerEngineeringAgent,
+            ProtocolResearchAgent,
+            QATestAgent,
+            RiskSecurityAgent,
+            SubnetDiscoveryAgent,
+            SubnetScoringAgent,
+            SystemCheckAgent,
+            TrainingExperimentAgent,
+            ValidatorEngineeringAgent,
+            WalletWatchAgent,
         )
+        from src.orchestrator import SwarmOrchestrator, load_plugins
     except ImportError as exc:
         click.echo(click.style(f"Import failed: {exc}", fg="red"), err=True)
         raise click.Abort()
@@ -827,7 +836,7 @@ def capabilities(ctx, json_output, plugin_paths):
     ):
         try:
             orch.register_agent(cls(config))
-        except Exception as exc:  # noqa: BLE001 — surface but don't crash
+        except Exception as exc:
             click.echo(click.style(
                 f"  warning: failed to register {cls.__name__}: {exc}",
                 fg="yellow",
@@ -887,7 +896,7 @@ def version(ctx):
     click.echo(f"  Version:    {VERSION}")
     click.echo(f"  Python:     {sys.version.split()[0]}")
     click.echo(f"  Platform:   {sys.platform}")
-    click.echo(f"  Mode:       READ-ONLY (SAFE)")
+    click.echo("  Mode:       READ-ONLY (SAFE)")
     click.echo(_mode_banner(config))
     click.echo()
     click.echo("  Safety Rules:")

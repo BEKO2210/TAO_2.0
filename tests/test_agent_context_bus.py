@@ -12,15 +12,12 @@ Two layers:
 
 from __future__ import annotations
 
-import pytest
-
-from src.orchestrator import AgentContext, SwarmOrchestrator
 from src.agents import (
-    SystemCheckAgent,
     MinerEngineeringAgent,
+    SystemCheckAgent,
     WalletWatchAgent,
 )
-
+from src.orchestrator import AgentContext, SwarmOrchestrator
 
 # ---------------------------------------------------------------------------
 # Unit-level: AgentContext
@@ -176,7 +173,7 @@ def test_miner_explicit_config_profile_wins_over_context():
         "hardware_profile": {"ram_gb": 99, "has_gpu": True, "vram_gb": 80, "cpu_cores": 32},
     }))
     orch.execute_task({"type": "system_check"})
-    out = orch.execute_task({"type": "miner_setup", "subnet_id": 12})
+    orch.execute_task({"type": "miner_setup", "subnet_id": 12})
     miner = orch.agents["miner_engineering_agent"]
     # The configured profile must not have been replaced by the context one.
     assert miner._hardware_profile.get("ram_gb") == 99

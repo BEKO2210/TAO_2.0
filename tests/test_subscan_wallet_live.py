@@ -21,16 +21,14 @@ path is opt-in via ``use_mock_data=False``. These tests mock
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.collectors.wallet_watchonly import (
-    WalletWatchOnlyCollector,
     _PLANCK_PER_TAO,
+    WalletWatchOnlyCollector,
 )
-
 
 _ADDR = "5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy"
 

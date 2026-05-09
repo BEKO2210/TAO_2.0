@@ -9,7 +9,6 @@ Provides miner setup notes and test plans.
 
 import logging
 import time
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +187,6 @@ class MinerEngineeringAgent:
         netuid = subnet.get("netuid", params.get("netuid", 0))
         name = subnet.get("name", f"Subnet-{netuid}")
         repo_url = subnet.get("repo_url", params.get("repo_url", ""))
-        category = subnet.get("category", "unknown")
 
         steps: list[dict] = []
 
@@ -387,7 +385,7 @@ class MinerEngineeringAgent:
             "subnet_netuid": netuid,
             "tests": tests,
             "test_count": len(tests),
-            "estimated_duration_minutes": len(tests * 5),
+            "estimated_duration_minutes": len(tests) * 5,
             "timestamp": time.time(),
         }
 

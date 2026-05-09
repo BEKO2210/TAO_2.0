@@ -12,7 +12,6 @@ import logging
 import os
 import shutil
 import subprocess
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,7 @@ class MinerReadinessScorer:
     generates a readiness report with actionable feedback.
     """
 
-    def __init__(self, config: Optional[dict] = None) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the miner readiness scorer.
 

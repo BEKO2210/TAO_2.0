@@ -11,7 +11,6 @@ from src.collectors._base import BaseCollector
 from src.collectors.github_repos import GitHubRepoCollector
 from src.collectors.market_data import MarketDataCollector
 
-
 # ---------------------------------------------------------------------------
 # BaseCollector unit-level
 # ---------------------------------------------------------------------------

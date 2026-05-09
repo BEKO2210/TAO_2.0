@@ -29,7 +29,6 @@ import pytest
 from src.agents.risk_security_agent import RiskSecurityAgent
 from src.orchestrator.approval_gate import ApprovalGate, Classification
 
-
 # ---------------------------------------------------------------------------
 # scan_bittensor_dependency
 # ---------------------------------------------------------------------------

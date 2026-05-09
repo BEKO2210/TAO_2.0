@@ -17,7 +17,6 @@ import pytest
 
 from src.orchestrator import SwarmOrchestrator
 
-
 # ---------------------------------------------------------------------------
 # Bug A — module-level AGENT_NAME / AGENT_VERSION must be discovered
 # ---------------------------------------------------------------------------
@@ -88,9 +87,9 @@ def test_register_agent_without_any_name_raises():
 def test_real_agents_can_be_registered():
     """All 15 production agents must be registerable without patching."""
     from src.agents import (
+        SubnetScoringAgent,
         SystemCheckAgent,
         WalletWatchAgent,
-        SubnetScoringAgent,
     )
 
     orch = SwarmOrchestrator({"use_mock_data": True})

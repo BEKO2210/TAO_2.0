@@ -10,7 +10,6 @@ SAFETY: All trading actions are CAUTION or DANGER. No real trades.
 
 import logging
 import time
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +345,7 @@ class MarketTradeAgent:
             # CoinGecko API for TAO
             url = (
                 "https://api.coingecko.com/api/v3/simple/price"
-                f"?ids=bittensor&vs_currencies=usd&include_24hr_change=true"
+                "?ids=bittensor&vs_currencies=usd&include_24hr_change=true"
             )
             resp = requests.get(url, timeout=10)
             data = resp.json()

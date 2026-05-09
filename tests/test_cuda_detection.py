@@ -15,12 +15,9 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import patch
 
-import pytest
-
-from src.agents.system_check_agent import SystemCheckAgent
 from src.agents._hardware import hardware_profile_from_context
+from src.agents.system_check_agent import SystemCheckAgent
 from src.orchestrator import AgentContext
-
 
 # ---------------------------------------------------------------------------
 # Helpers

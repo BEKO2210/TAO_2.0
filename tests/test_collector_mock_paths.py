@@ -18,11 +18,8 @@ file pins down:
 
 from __future__ import annotations
 
-import pytest
-
 from src.collectors.subnet_metadata import SubnetMetadataCollector
 from src.collectors.wallet_watchonly import WalletWatchOnlyCollector
-
 
 # ---------------------------------------------------------------------------
 # subnet_metadata: mock branches for the two HTTP entry points

@@ -11,7 +11,6 @@ Returns: proceed / pause / reject / STOP
 import logging
 import re
 import time
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +182,6 @@ class RiskSecurityAgent:
         self._status = "running"
         params = task.get("params", {})
         target = params.get("target", "general")
-        content = params.get("content", "")
         operation_type = params.get("operation_type", "")
 
         logger.info(
@@ -723,7 +721,7 @@ class RiskSecurityAgent:
                 hint = (
                     f"version {version} on the legitimate name"
                     if name == "bittensor" and version
-                    else f"typosquat of bittensor / bittensor-cli"
+                    else "typosquat of bittensor / bittensor-cli"
                 )
                 findings.append({
                     "severity": "CRITICAL",

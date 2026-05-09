@@ -24,24 +24,23 @@ import json
 
 import pytest
 
-from src.orchestrator import SwarmOrchestrator
 from src.agents import (
-    SystemCheckAgent,
+    DashboardDesignAgent,
+    DocumentationAgent,
+    FullstackDevAgent,
+    InfraDevopsAgent,
+    MarketTradeAgent,
+    MinerEngineeringAgent,
     ProtocolResearchAgent,
+    QATestAgent,
+    RiskSecurityAgent,
     SubnetDiscoveryAgent,
     SubnetScoringAgent,
-    WalletWatchAgent,
-    MarketTradeAgent,
-    RiskSecurityAgent,
-    MinerEngineeringAgent,
+    SystemCheckAgent,
     ValidatorEngineeringAgent,
-    InfraDevopsAgent,
-    DashboardDesignAgent,
-    FullstackDevAgent,
-    QATestAgent,
-    DocumentationAgent,
+    WalletWatchAgent,
 )
-
+from src.orchestrator import SwarmOrchestrator
 
 REQUIRED_ORCH_FIELDS: set[str] = {
     "status",

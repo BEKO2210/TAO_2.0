@@ -10,7 +10,6 @@ No real trades are executed - this is for paper trading simulation only.
 
 import logging
 import math
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ class TradeRiskScorer:
     No actual trades are executed.
     """
 
-    def __init__(self, config: Optional[dict] = None) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the trade risk scorer.
 

@@ -12,8 +12,7 @@ Tests cover:
 
 import pytest
 
-from src.scoring.subnet_score import SubnetScorer, CRITERIA_WEIGHTS
-
+from src.scoring.subnet_score import CRITERIA_WEIGHTS, SubnetScorer
 
 # ---------------------------------------------------------------------------
 # Helpers

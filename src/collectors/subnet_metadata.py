@@ -12,7 +12,6 @@ import os
 import re
 import sqlite3
 import time
-from typing import Any, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -126,7 +125,7 @@ class SubnetMetadataCollector(BaseCollector):
             )
             conn.commit()
 
-    def _db_get_profile(self, netuid: int) -> Optional[dict]:
+    def _db_get_profile(self, netuid: int) -> dict | None:
         """Retrieve a cached subnet profile."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
@@ -225,7 +224,7 @@ class SubnetMetadataCollector(BaseCollector):
             logger.error("GitHub API error for %s: %s", repo_url, exc)
             return {"error": str(exc), "url": repo_url}
 
-    def _github_from_cache(self, repo_url: str) -> Optional[dict]:
+    def _github_from_cache(self, repo_url: str) -> dict | None:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT metadata FROM github_metadata WHERE repo_url = ?", (repo_url,)
@@ -309,7 +308,7 @@ class SubnetMetadataCollector(BaseCollector):
             logger.error("Docs fetch error for %s: %s", docs_url, exc)
             return {"error": str(exc), "docs_url": docs_url}
 
-    def _docs_from_cache(self, docs_url: str) -> Optional[dict]:
+    def _docs_from_cache(self, docs_url: str) -> dict | None:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT metadata FROM docs_metadata WHERE docs_url = ?", (docs_url,)

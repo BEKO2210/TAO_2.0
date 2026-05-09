@@ -24,17 +24,15 @@ from __future__ import annotations
 import threading
 import time
 
-import pytest
-
-from src.orchestrator import SwarmOrchestrator
 from src.agents import (
-    SystemCheckAgent,
+    MarketTradeAgent,
     ProtocolResearchAgent,
+    RiskSecurityAgent,
     SubnetDiscoveryAgent,
     SubnetScoringAgent,
-    MarketTradeAgent,
-    RiskSecurityAgent,
+    SystemCheckAgent,
 )
+from src.orchestrator import SwarmOrchestrator
 
 
 def _build_orch() -> SwarmOrchestrator:

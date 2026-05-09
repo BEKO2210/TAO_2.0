@@ -11,6 +11,7 @@ Exports the core orchestration components:
 
 from src.orchestrator.approval_gate import ApprovalGate, Classification
 from src.orchestrator.context import AgentContext
+from src.orchestrator.orchestrator import SwarmOrchestrator
 from src.orchestrator.plugin_loader import (
     ON_CONFLICT_ERROR,
     ON_CONFLICT_REPLACE,
@@ -24,20 +25,19 @@ from src.orchestrator.resilience import (
     TaskTimeoutError,
 )
 from src.orchestrator.task_router import TaskRouter
-from src.orchestrator.orchestrator import SwarmOrchestrator
 
 __all__ = [
-    "ApprovalGate",
-    "Classification",
-    "TaskRouter",
-    "SwarmOrchestrator",
+    "ON_CONFLICT_ERROR",
+    "ON_CONFLICT_REPLACE",
+    "ON_CONFLICT_SKIP",
     "AgentContext",
+    "ApprovalGate",
     "CancelToken",
+    "Classification",
+    "PluginLoadSummary",
     "RetryPolicy",
+    "SwarmOrchestrator",
+    "TaskRouter",
     "TaskTimeoutError",
     "load_plugins",
-    "PluginLoadSummary",
-    "ON_CONFLICT_SKIP",
-    "ON_CONFLICT_REPLACE",
-    "ON_CONFLICT_ERROR",
 ]
