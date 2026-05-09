@@ -76,6 +76,17 @@ st.set_page_config(
 
 # ── Dark mode CSS ─────────────────────────────────────────────────────────
 
+# ── Premium theme injection (PR 2P) ───────────────────────────────────────
+# Loaded after page_config so the CSS reaches the rendered DOM. Falls back
+# silently when streamlit is missing (the helpers in theme.py are pure HTML
+# strings; their unit tests don't need streamlit).
+try:
+    from tao_swarm.dashboard.theme import inject as _inject_theme
+    if STREAMLIT_AVAILABLE:
+        _inject_theme(st)
+except Exception:  # pragma: no cover - defensive
+    pass
+
 DARK_CSS = """
 <style>
     .stApp {
@@ -570,38 +581,48 @@ def render_trading():
 
     st.subheader("Runner")
     if status:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("State", label.upper())
-        with col2:
-            st.metric("Strategy", str(status.get("strategy", "—")))
-        with col3:
-            mode = "LIVE" if not status.get("paper", True) else "PAPER"
-            st.metric("Mode", mode)
-        with col4:
-            ts = status.get("last_tick_ts")
-            if ts:
-                tick_str = datetime.fromtimestamp(
-                    float(ts), tz=timezone.utc,
-                ).strftime("%H:%M:%S")
-            else:
-                tick_str = "never"
-            st.metric("Last tick", tick_str)
+        from tao_swarm.dashboard.theme import banner, hero_block, status_pill
 
-        cola, colb, colc, cold = st.columns(4)
-        with cola:
-            st.metric("Ticks", int(status.get("ticks", 0)))
-        with colb:
-            st.metric("Executed", int(status.get("executed", 0)))
-        with colc:
-            st.metric("Refused", int(status.get("refused", 0)))
-        with cold:
-            st.metric("Errors", int(status.get("errors", 0)))
+        # Status-pill row above the hero — gives the operator a single-
+        # glance read on whether the bot is healthy.
+        st.markdown(
+            status_pill(label) + "  &nbsp;"
+            + (
+                f"<span style='color:#9ba6b8'>strategy "
+                f"<b>{status.get('strategy', '—')}</b> · "
+                f"mode <b>"
+                + ("LIVE" if not status.get("paper", True) else "PAPER")
+                + "</b></span>"
+            ),
+            unsafe_allow_html=True,
+        )
+
+        ts = status.get("last_tick_ts")
+        if ts:
+            tick_str = datetime.fromtimestamp(
+                float(ts), tz=timezone.utc,
+            ).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            tick_str = "never"
+
+        st.markdown(hero_block([
+            ("Ticks", str(int(status.get("ticks", 0))), None),
+            ("Executed", str(int(status.get("executed", 0))), None),
+            ("Refused", str(int(status.get("refused", 0))), None),
+            ("Errors", str(int(status.get("errors", 0))), None),
+            ("Last tick", tick_str, "UTC"),
+        ]), unsafe_allow_html=True)
 
         if status.get("halted_reason"):
-            st.error(f"HALTED: {status['halted_reason']}")
+            st.markdown(
+                banner("danger", f"<b>HALTED.</b> {status['halted_reason']}"),
+                unsafe_allow_html=True,
+            )
         elif status.get("last_error"):
-            st.warning(f"Last error: {status['last_error']}")
+            st.markdown(
+                banner("warning", f"<b>Last error.</b> {status['last_error']}"),
+                unsafe_allow_html=True,
+            )
 
         positions = status.get("open_positions") or {}
         if positions:
@@ -968,26 +989,69 @@ def main():
 
     # Sidebar navigation
     with st.sidebar:
-        st.markdown("### Navigation")
+        from tao_swarm.dashboard.cheat_sheet import (
+            cheat_sheet_groups,
+            how_to_interact_html,
+        )
+        from tao_swarm.dashboard.theme import status_pill
+        from tao_swarm.dashboard.trading_view import (
+            load_runner_status,
+            runner_health_label,
+        )
+
+        st.markdown("### 🧭 Navigation")
         page = st.radio("Select page:", SIDEBAR_PAGES, label_visibility="collapsed")
 
         st.divider()
 
-        st.markdown("### Status")
-        st.markdown("<span class='badge-ready'>System Online</span>", unsafe_allow_html=True)
-        st.markdown("<span class='badge-low'>Read-Only Mode</span>", unsafe_allow_html=True)
-        st.markdown("<span class='badge-ready'>No Secrets Stored</span>", unsafe_allow_html=True)
+        # Always-visible runner status (PR 2P) — operator sees from
+        # any page whether the runner is alive / halted / errored.
+        data_dir = Path(os.environ.get("TAO_DATA_DIR", "data"))
+        status_path = Path(os.environ.get(
+            "TAO_RUNNER_STATUS_FILE", data_dir / "runner_status.json",
+        ))
+        runner_status = load_runner_status(status_path)
+        st.markdown("### 🎛️ Runner")
+        label, _ = runner_health_label(runner_status)
+        st.markdown(status_pill(label), unsafe_allow_html=True)
+        if runner_status:
+            ticks = int(runner_status.get("ticks", 0))
+            executed = int(runner_status.get("executed", 0))
+            st.caption(
+                f"strategy={runner_status.get('strategy', '—')} · "
+                f"ticks={ticks} · executed={executed}"
+            )
+        else:
+            st.caption("No runner_status.json found yet.")
 
         st.divider()
 
-        st.markdown("### Quick Actions")
-        if st.button("Refresh Data"):
+        # "Wie rede ich mit dem System" cheat-sheet (PR 2P).
+        st.markdown("### 💬 Commands")
+        st.markdown(how_to_interact_html(), unsafe_allow_html=True)
+
+        for group in cheat_sheet_groups():
+            with st.expander(f"{group.icon} {group.title}", expanded=False):
+                for item in group.items:
+                    st.code(item.command, language="bash")
+                    st.caption(item.description)
+                if group.note:
+                    st.info(group.note)
+
+        st.divider()
+
+        st.markdown("### ⚡ Quick Actions")
+        if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
 
         st.divider()
-        st.markdown("*TAO Swarm v1.0.0*")
-        st.markdown("*Local-only, no telemetry*")
+        st.markdown(
+            "<div style='color:#9ba6b8;font-size:0.78rem;'>"
+            "<b>TAO Swarm v1.0.0</b><br>Local-only · No telemetry · "
+            "Read-only by default</div>",
+            unsafe_allow_html=True,
+        )
 
     # Route to page
     if page == "System Status":
