@@ -226,25 +226,83 @@ backtester (which runs in-memory only) is unaffected. Strategies
 that compute realised P&L using entry must tolerate `entry=0.0`
 on cold-start positions.
 
-## 10. What the runner does NOT do
+## 10. Slippage controls (PR 2H)
+
+Bittensor staking uses an AMM-style alpha pool, so the realised
+price moves between proposal and broadcast. Two optional fields on
+:class:`TradeProposal` bound that risk:
+
+```python
+TradeProposal(
+    ...,
+    rate_tolerance=0.005,   # accept up to 0.5% slippage
+    allow_partial=True,     # accept partial fill if liquidity is short
+)
+```
+
+When `rate_tolerance` is set, the live signer passes
+`safe_staking=True` (or `safe_unstaking=True`) plus the tolerance
+value to the SDK. The chain refuses the extrinsic if the realised
+rate would fall outside the tolerance — the operator's worst-case
+slippage is bounded.
+
+`allow_partial=True` flips `allow_partial_stake` so a large order
+that exceeds available liquidity is filled to capacity rather than
+failing entirely. Default is `False` (all-or-nothing).
+
+Both default to `None` / `False`, so existing strategies continue
+to use the SDK's safe-staking-off behaviour for backwards
+compatibility.
+
+## 11. Chain-truth verification (PR 2H)
+
+The signer trusts the SDK's success/failure response by default.
+With `--verify-broadcasts` (or `BittensorSigner(verify=True)`),
+the signer takes a pre-broadcast snapshot of the on-chain stake,
+runs the extrinsic, and re-reads the chain after submission to
+confirm the observed delta matches the proposed direction within
+tolerance (1% by default).
+
+```bash
+tao-swarm trade run \
+    --strategy momentum_rotation --live --live-trading \
+    --keystore-path ~/.tao-swarm/live.keystore \
+    --reconcile-from-coldkey 5xxx \
+    --verify-broadcasts \
+    ...
+```
+
+Outcomes:
+
+- **Match within tolerance** → action recorded as `stake` /
+  `unstake` with note `verified: ...`.
+- **Mismatch** (sign wrong, or magnitude off by more than tolerance)
+  → action recorded as `stake_verification_failed` /
+  `unstake_verification_failed`, note prefixed with
+  `VERIFY-MISMATCH:`. The broadcast itself was accepted; this is a
+  forensic flag, not a transaction abort.
+- **Read failure** (post-broadcast RPC drops) → `verified=None`,
+  note explains "post-broadcast read unavailable". Doesn't affect
+  the broadcast outcome.
+
+The verification step adds one extra RPC round-trip per live
+trade, so the operator can opt out for low-latency strategies.
+
+## 12. What the runner does NOT do
 
 - **Reconcile mid-flight.** Reconciliation is one-shot at startup.
   If your dedicated trading key gets used by another tool while
   the runner is running, the local book will drift. Don't share
   the keystore.
-- **Slippage / partial-fill modelling.** The backtester assumes a
-  fill at the proposal's `price_tao`. Reality on AMM-style staking
-  pools may differ.
+- **Slippage modelling in the backtester.** The backtester assumes
+  a fill at the proposal's `price_tao`. The slippage controls in
+  section 10 only affect live broadcasts.
 - **Multi-strategy ensembles.** One strategy per runner process for
   now. You can run several runner processes pointing at different
   ledgers if you want a basket; cap budgets are not shared
   automatically.
-- **Chain-truth verification after each broadcast.** The signer
-  trusts the SDK's success/failure response. A future PR will add
-  a post-broadcast read to confirm the on-chain state matches
-  expectations.
 
-## 11. Where to look in the source
+## 13. Where to look in the source
 
 | Concern | File |
 |---|---|

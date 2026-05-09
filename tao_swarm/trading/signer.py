@@ -119,6 +119,27 @@ class SubmitReceipt:
     fields the executor cares about, with all SDK-specific types
     flattened so the rest of the swarm doesn't need to import
     ``bittensor`` to inspect a result.
+
+    Chain-truth verification (PR 2H)
+    --------------------------------
+
+    When the operator opts in via ``BittensorSigner(verify=True)``,
+    the signer re-reads the on-chain stake **after** broadcast and
+    reports the result here:
+
+    - ``verified``: ``True`` if the on-chain delta after the
+      extrinsic matches the proposal direction within tolerance,
+      ``False`` if it doesn't, ``None`` if verification was disabled
+      or the read itself failed.
+    - ``observed_delta_tao``: signed change in stake observed
+      on-chain. Positive for stake, negative for unstake.
+    - ``verify_message``: human-readable detail (e.g. "expected
+      stake to grow by 1.0 TAO, observed +0.998 TAO within 1% tolerance").
+
+    A failed verification does NOT change the broadcast result —
+    the extrinsic was already accepted by the chain. The signer
+    surfaces the divergence so the operator's audit trail captures
+    it; the executor records a ``_verification_failed`` ledger note.
     """
 
     success: bool
@@ -127,6 +148,9 @@ class SubmitReceipt:
     tx_hash: str | None = None
     fee_tao: float | None = None
     raw: Any = None  # the original ExtrinsicResponse, for deep audit
+    verified: bool | None = None
+    observed_delta_tao: float | None = None
+    verify_message: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +216,7 @@ class BittensorSigner:
         "_handle", "_network", "_endpoint",
         "_subtensor_factory", "_bittensor_module",
         "_subtensor", "_closed",
+        "_verify", "_verify_tolerance_pct", "_coldkey_ss58_for_verify",
     )
 
     def __init__(
@@ -202,10 +227,17 @@ class BittensorSigner:
         endpoint: str | None = None,
         subtensor_factory: Callable[..., Any] | None = None,
         bittensor_module: Any = None,
+        verify: bool = False,
+        verify_tolerance_pct: float = 0.01,
+        coldkey_ss58: str | None = None,
     ) -> None:
         if handle is None or handle.closed:
             raise SignerConfigError(
                 "BittensorSigner requires an unlocked SignerHandle"
+            )
+        if verify_tolerance_pct < 0:
+            raise SignerConfigError(
+                f"verify_tolerance_pct must be >= 0, got {verify_tolerance_pct}"
             )
         self._handle = handle
         self._network = network
@@ -214,6 +246,9 @@ class BittensorSigner:
         self._bittensor_module = bittensor_module
         self._subtensor: Any = None
         self._closed = False
+        self._verify = bool(verify)
+        self._verify_tolerance_pct = float(verify_tolerance_pct)
+        self._coldkey_ss58_for_verify = coldkey_ss58
 
     # ---- lifecycle ----
 
@@ -281,6 +316,16 @@ class BittensorSigner:
         sub = self._get_subtensor(bt)
         amount_balance = bt.utils.balance.Balance.from_tao(proposal.amount_tao)
 
+        # Snapshot pre-broadcast stake for chain-truth verification.
+        pre_stake_tao: float | None = None
+        if self._verify and proposal.action in ("stake", "unstake"):
+            pre_stake_tao = self._read_stake_tao(
+                sub=sub,
+                proposal=proposal,
+                wallet=wallet,
+                target_hotkey_ss58=target_hotkey_ss58,
+            )
+
         try:
             response = self._dispatch(
                 bt=bt,
@@ -307,6 +352,14 @@ class BittensorSigner:
                 f"{proposal.action} chain-rejected: {message or 'no message'}"
             )
 
+        verified, observed_delta, verify_msg = self._verify_post_broadcast(
+            sub=sub,
+            proposal=proposal,
+            wallet=wallet,
+            target_hotkey_ss58=target_hotkey_ss58,
+            pre_stake_tao=pre_stake_tao,
+        )
+
         return SubmitReceipt(
             success=True,
             message=message or f"{proposal.action} broadcast accepted",
@@ -314,6 +367,9 @@ class BittensorSigner:
             tx_hash=_extract_tx_hash(response),
             fee_tao=_extract_fee_tao(response),
             raw=response,
+            verified=verified,
+            observed_delta_tao=observed_delta,
+            verify_message=verify_msg,
         )
 
     # ---- internals ----
@@ -349,6 +405,103 @@ class BittensorSigner:
         self._subtensor = bt.Subtensor(**kwargs)
         return self._subtensor
 
+    def _read_stake_tao(
+        self,
+        *,
+        sub: Any,
+        proposal: TradeProposal,
+        wallet: Any,
+        target_hotkey_ss58: str | None,
+    ) -> float | None:
+        """Read the current stake for (coldkey, hotkey, netuid) in TAO.
+
+        Returns ``None`` if the read can't be performed — verification
+        is best-effort; the broadcast itself already succeeded.
+        """
+        try:
+            netuid = int(proposal.target.get("netuid"))
+        except (TypeError, ValueError):
+            return None
+        hotkey = target_hotkey_ss58 or proposal.target.get("hotkey")
+        if not hotkey:
+            return None
+        coldkey = self._coldkey_ss58_for_verify or _wallet_ss58(wallet)
+        if not coldkey:
+            return None
+        try:
+            stakes = sub.get_stake_for_coldkey_and_hotkey(
+                coldkey_ss58=str(coldkey),
+                hotkey_ss58=str(hotkey),
+                netuids=[netuid],
+            )
+        except Exception as exc:
+            logger.warning("verify-read failed: %s", exc)
+            return None
+        if not stakes:
+            return 0.0
+        info = stakes.get(netuid) if isinstance(stakes, dict) else None
+        if info is None:
+            return 0.0
+        balance = getattr(info, "stake", info)
+        tao = getattr(balance, "tao", None)
+        if tao is not None:
+            try:
+                return float(tao)
+            except (TypeError, ValueError):
+                return None
+        try:
+            return float(balance)
+        except (TypeError, ValueError):
+            return None
+
+    def _verify_post_broadcast(
+        self,
+        *,
+        sub: Any,
+        proposal: TradeProposal,
+        wallet: Any,
+        target_hotkey_ss58: str | None,
+        pre_stake_tao: float | None,
+    ) -> tuple[bool | None, float | None, str | None]:
+        """Re-read on-chain stake and confirm the delta matches the
+        proposal direction within ``verify_tolerance_pct``.
+
+        Returns ``(verified, observed_delta_tao, message)``. Each
+        component may be ``None`` when verification was disabled or
+        skipped (paper trades, transfer action, missing pre-snapshot).
+        """
+        if not self._verify:
+            return None, None, None
+        if proposal.action not in ("stake", "unstake"):
+            return None, None, "verification skipped: action is not stake/unstake"
+        if pre_stake_tao is None:
+            return None, None, "verification skipped: pre-broadcast read unavailable"
+        post_stake_tao = self._read_stake_tao(
+            sub=sub, proposal=proposal, wallet=wallet,
+            target_hotkey_ss58=target_hotkey_ss58,
+        )
+        if post_stake_tao is None:
+            return None, None, "verification skipped: post-broadcast read unavailable"
+        observed_delta = post_stake_tao - pre_stake_tao
+        expected_sign = 1.0 if proposal.action == "stake" else -1.0
+        expected_delta = expected_sign * proposal.amount_tao
+        # Tolerance is a fraction of the proposed amount.
+        tol = abs(expected_delta) * self._verify_tolerance_pct
+        # Direction first — if the sign is wrong, no tolerance saves us.
+        same_sign = (expected_delta == 0) or (
+            (observed_delta >= 0) == (expected_delta >= 0)
+        )
+        magnitude_ok = abs(observed_delta - expected_delta) <= max(tol, 1e-9)
+        verified = bool(same_sign and magnitude_ok)
+        msg = (
+            f"{proposal.action}: expected delta {expected_delta:+.6f} TAO, "
+            f"observed {observed_delta:+.6f} TAO "
+            f"(tolerance {self._verify_tolerance_pct * 100:.2f}%)"
+        )
+        if not verified:
+            logger.warning("chain-truth verification mismatch: %s", msg)
+        return verified, observed_delta, msg
+
     def _dispatch(
         self,
         *,
@@ -373,12 +526,24 @@ class BittensorSigner:
                     "target_hotkey_ss58=… or set 'hotkey' on the proposal)"
                 )
             method = sub.add_stake if proposal.action == "stake" else sub.unstake
-            return method(
-                wallet=wallet,
-                netuid=int(netuid),
-                hotkey_ss58=str(hotkey_ss58),
-                amount=amount,
-            )
+            kwargs: dict[str, Any] = {
+                "wallet": wallet,
+                "netuid": int(netuid),
+                "hotkey_ss58": str(hotkey_ss58),
+                "amount": amount,
+            }
+            # Slippage controls (PR 2H). The SDK uses different flag
+            # names for stake vs. unstake; pass both rather than
+            # branching on action twice.
+            if proposal.rate_tolerance is not None:
+                kwargs["rate_tolerance"] = float(proposal.rate_tolerance)
+                if proposal.action == "stake":
+                    kwargs["safe_staking"] = True
+                else:
+                    kwargs["safe_unstaking"] = True
+            if proposal.allow_partial:
+                kwargs["allow_partial_stake"] = True
+            return method(**kwargs)
         if proposal.action == "transfer":
             destination = (
                 target_hotkey_ss58
@@ -441,6 +606,14 @@ def _build_wallet_from_seed(bt: Any, seed: bytes) -> Any:
 # ---------------------------------------------------------------------------
 # Receipt-extraction helpers — defensive against SDK shape drift
 # ---------------------------------------------------------------------------
+
+def _wallet_ss58(wallet: Any) -> str | None:
+    """Best-effort coldkey ss58 extraction from a Bittensor Wallet."""
+    coldkey = getattr(wallet, "_coldkey", None) or getattr(wallet, "coldkey", None)
+    if coldkey is None:
+        return None
+    return getattr(coldkey, "ss58_address", None)
+
 
 def _extract_tx_hash(response: Any) -> str | None:
     """Best-effort tx-hash extraction across SDK shapes."""
