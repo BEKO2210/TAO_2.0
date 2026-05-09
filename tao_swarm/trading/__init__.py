@@ -85,6 +85,11 @@ from tao_swarm.trading.signer import (
     authorise_live_trade,
 )
 from tao_swarm.trading.strategy_base import Strategy, StrategyMeta, TradeProposal
+from tao_swarm.trading.strategy_loader import (
+    StrategyLoadSummary,
+    StrategyRegistry,
+    load_strategy_plugins,
+)
 
 __all__ = [
     "LIVE_TRADING_ENV",
@@ -114,7 +119,9 @@ __all__ = [
     "SignerConfigError",
     "SignerHandle",
     "Strategy",
+    "StrategyLoadSummary",
     "StrategyMeta",
+    "StrategyRegistry",
     "SubmitReceipt",
     "TradeProposal",
     "TradeRecord",
@@ -123,4 +130,5 @@ __all__ = [
     "WrongPasswordError",
     "aggregate_by_netuid",
     "authorise_live_trade",
+    "load_strategy_plugins",
 ]
