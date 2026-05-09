@@ -74,6 +74,7 @@ class SystemCheckAgent:
             )
 
             result = {
+                "status": "complete",
                 "hardware_report": hardware_report,
                 "software_report": software_report,
                 "readiness_scores": readiness_scores,
@@ -90,7 +91,12 @@ class SystemCheckAgent:
         except Exception as e:
             self._status = "error"
             logger.exception("SystemCheckAgent: check failed: %s", e)
-            raise
+            return {
+                "status": "error",
+                "reason": str(e),
+                "agent_name": AGENT_NAME,
+                "task_type": task.get("type"),
+            }
 
     def get_status(self) -> dict:
         """
@@ -118,6 +124,8 @@ class SystemCheckAgent:
         """
         if not isinstance(task, dict):
             return False, "Task must be a dictionary"
+        if "type" not in task:
+            return False, "task.type is required"
         return True, ""
 
     def _check_hardware(self) -> dict:

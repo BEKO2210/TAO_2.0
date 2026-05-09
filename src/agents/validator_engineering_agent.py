@@ -91,7 +91,12 @@ evaluation logic, checks stake requirements, and performs code
         except Exception as e:
             self._status = "error"
             logger.exception("ValidatorEngineeringAgent: failed: %s", e)
-            raise
+            return {
+                "status": "error",
+                "reason": str(e),
+                "agent_name": AGENT_NAME,
+                "task_type": task.get("type"),
+            }
 
     def get_status(self) -> dict:
         """
@@ -119,6 +124,8 @@ evaluation logic, checks stake requirements, and performs code
         """
         if not isinstance(task, dict):
             return False, "Task must be a dictionary"
+        if "type" not in task:
+            return False, "task.type is required"
         params = task.get("params", {})
         action = params.get("action", "feasibility")
         valid_actions = ["feasibility", "stake_check", "code_review"]

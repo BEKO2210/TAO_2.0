@@ -1,9 +1,8 @@
 """
 Plug-in loader for the TAO/Bittensor Multi-Agent Swarm.
 
-User-defined agents (e.g. ``MicroFishAgent``, ``CricketBrainAgent``)
-can live OUTSIDE this repo and be loaded into the swarm at runtime
-via two mechanisms:
+User-defined agents can live OUTSIDE this repo and be loaded into
+the swarm at runtime via two mechanisms:
 
 1. **Path-based discovery** (zero-packaging — drop a ``*_agent.py``
    file in a folder, set ``TAO_PLUGIN_PATHS`` or pass ``paths=``).
@@ -23,6 +22,8 @@ receive the shared ``AgentContext`` automatically (just like
 built-ins), so they can pull system_check reports etc. without
 extra wiring.
 
+A worked example ships in ``examples/subnet_repo_health/``.
+
 Usage
 -----
 
@@ -30,9 +31,9 @@ Path-based, programmatic::
 
     from src.orchestrator import SwarmOrchestrator, load_plugins
     orch = SwarmOrchestrator({"use_mock_data": True})
-    summary = load_plugins(orch, paths=["/home/user/my-agents"])
+    summary = load_plugins(orch, paths=["examples/subnet_repo_health"])
     print(summary)
-    # → {"loaded": ["microfish_agent"], "skipped": [...], "errors": [...]}
+    # → {"loaded": ["subnet_repo_health_agent"], "skipped": [...], "errors": [...]}
 
 Path-based, env var::
 
@@ -41,8 +42,7 @@ Path-based, env var::
 Entry-point-based (user's own ``pyproject.toml``)::
 
     [project.entry-points."tao.agents"]
-    microfish = "microfish.agent:MicroFishAgent"
-    cricket_brain = "cricket_brain.agent:CricketBrainAgent"
+    subnet_repo_health = "subnet_repo_health_agent:SubnetRepoHealthAgent"
 
 Then::
 

@@ -93,7 +93,12 @@ current system state. Generates documentation status reports
         except Exception as e:
             self._status = "error"
             logger.exception("DocumentationAgent: failed: %s", e)
-            raise
+            return {
+                "status": "error",
+                "reason": str(e),
+                "agent_name": AGENT_NAME,
+                "task_type": task.get("type"),
+            }
 
     def get_status(self) -> dict:
         """
@@ -121,6 +126,8 @@ current system state. Generates documentation status reports
         """
         if not isinstance(task, dict):
             return False, "Task must be a dictionary"
+        if "type" not in task:
+            return False, "task.type is required"
         params = task.get("params", {})
         action = params.get("action", "status")
         valid_actions = ["status", "update_readme", "update_kimi", "update_logs"]

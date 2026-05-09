@@ -222,12 +222,18 @@ class RiskSecurityAgent:
             logger.info(
                 "RiskSecurityAgent: verdict=%s", result.get("verdict")
             )
+            result.setdefault("status", "complete")
             return result
 
         except Exception as e:
             self._status = "error"
             logger.exception("RiskSecurityAgent: review failed: %s", e)
-            raise
+            return {
+                "status": "error",
+                "reason": str(e),
+                "agent_name": AGENT_NAME,
+                "task_type": task.get("type"),
+            }
 
     def get_status(self) -> dict:
         """
@@ -262,6 +268,8 @@ class RiskSecurityAgent:
         """
         if not isinstance(task, dict):
             return False, "Task must be a dictionary"
+        if "type" not in task:
+            return False, "task.type is required"
         return True, ""
 
     def _review_operation(self, params: dict) -> dict:

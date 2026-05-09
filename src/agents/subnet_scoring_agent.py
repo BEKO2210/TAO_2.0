@@ -119,6 +119,7 @@ class SubnetScoringAgent:
             scored_subnets.sort(key=lambda s: s["final_score"], reverse=True)
 
             result = {
+                "status": "complete",
                 "scored_subnets": scored_subnets,
                 "recommendations": self._generate_recommendations(scored_subnets),
                 "weights_used": self._weights,
@@ -140,7 +141,12 @@ class SubnetScoringAgent:
         except Exception as e:
             self._status = "error"
             logger.exception("SubnetScoringAgent: scoring failed: %s", e)
-            raise
+            return {
+                "status": "error",
+                "reason": str(e),
+                "agent_name": AGENT_NAME,
+                "task_type": task.get("type"),
+            }
 
     def get_status(self) -> dict:
         """
@@ -185,6 +191,8 @@ class SubnetScoringAgent:
         """
         if not isinstance(task, dict):
             return False, "Task must be a dictionary"
+        if "type" not in task:
+            return False, "task.type is required"
         params = self._resolve_params(task)
         subnets = params.get("subnets", [])
         if not isinstance(subnets, list):

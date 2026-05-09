@@ -230,29 +230,29 @@ class WalletWatchAgent:
             Wallet watch report or portfolio snapshot
         """
         self._status = "running"
-        # Support both nested ``params`` and flat task-level keys. If the
-        # caller passed any of action/address/label at the top level and
-        # didn't nest them, promote them so the rest of run() doesn't care.
-        params = dict(task.get("params") or {})
-        for key in ("action", "address", "label"):
-            if key in task and key not in params:
-                params[key] = task[key]
-        action = params.get("action", "snapshot")
-        address = params.get("address", "")
-
-        # Auto-watch: if the caller asked for a snapshot/check and supplied
-        # an address that we don't yet track, register it first so the
-        # operation has something to look at instead of returning balance=0.
-        if address and action in ("snapshot", "check") and address not in self._watched:
-            if self._validate_address(address):
-                self._add_watch({
-                    "address": address,
-                    "label": params.get("label", ""),
-                })
-
-        logger.info("WalletWatchAgent: action=%s", action)
-
         try:
+            # Support both nested ``params`` and flat task-level keys. If the
+            # caller passed any of action/address/label at the top level and
+            # didn't nest them, promote them so the rest of run() doesn't care.
+            params = dict(task.get("params") or {})
+            for key in ("action", "address", "label"):
+                if key in task and key not in params:
+                    params[key] = task[key]
+            action = params.get("action", "snapshot")
+            address = params.get("address", "")
+
+            # Auto-watch: if the caller asked for a snapshot/check and supplied
+            # an address that we don't yet track, register it first so the
+            # operation has something to look at instead of returning balance=0.
+            if address and action in ("snapshot", "check") and address not in self._watched:
+                if self._validate_address(address):
+                    self._add_watch({
+                        "address": address,
+                        "label": params.get("label", ""),
+                    })
+
+            logger.info("WalletWatchAgent: action=%s", action)
+
             if action == "watch":
                 result = self._add_watch(params)
                 result["success"] = result["status"] in ("added", "already_watched")
@@ -280,7 +280,12 @@ class WalletWatchAgent:
         except Exception as e:
             self._status = "error"
             logger.exception("WalletWatchAgent: failed: %s", e)
-            raise
+            return {
+                "status": "error",
+                "reason": str(e),
+                "agent_name": AGENT_NAME,
+                "task_type": task.get("type"),
+            }
 
     def get_status(self) -> dict:
         """
@@ -309,6 +314,8 @@ class WalletWatchAgent:
         """
         if not isinstance(task, dict) or not task:
             return False, "Task must be a non-empty dictionary"
+        if "type" not in task:
+            return False, "task.type is required"
 
         # Support both direct action and params.action
         params = task.get("params", {})
