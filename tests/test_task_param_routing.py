@@ -15,11 +15,8 @@ form) and either scaffold sensible defaults or auto-watch.
 
 from __future__ import annotations
 
-import pytest
-
 from src.agents.subnet_scoring_agent import SubnetScoringAgent
 from src.agents.wallet_watch_agent import WalletWatchAgent
-
 
 # ---------------------------------------------------------------------------
 # B2 — SubnetScoringAgent honours top-level subnet_id / netuid

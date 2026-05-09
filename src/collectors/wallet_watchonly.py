@@ -16,7 +16,7 @@ import os
 import re
 import sqlite3
 import time
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -135,7 +135,7 @@ class WalletWatchOnlyCollector(BaseCollector):
             """)
             conn.commit()
 
-    def _cache_get(self, table: str, key_col: str, key_val: str) -> Optional[dict]:
+    def _cache_get(self, table: str, key_col: str, key_val: str) -> dict | None:
         """Get cached data if not expired."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(

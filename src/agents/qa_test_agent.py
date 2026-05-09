@@ -342,7 +342,7 @@ class QATestAgent:
 
         if os.path.isfile(scan_dir):
             files_scanned += 1
-            with open(scan_dir, "r") as f:
+            with open(scan_dir) as f:
                 content = f.read()
             findings.extend(self._scan_content_for_secrets(content, scan_dir))
         elif os.path.isdir(scan_dir):
@@ -354,7 +354,7 @@ class QATestAgent:
                         full_path = os.path.join(root, fname)
                         files_scanned += 1
                         try:
-                            with open(full_path, "r") as f:
+                            with open(full_path) as f:
                                 content = f.read()
                             findings.extend(self._scan_content_for_secrets(content, full_path))
                         except Exception as e:
@@ -418,7 +418,7 @@ class QATestAgent:
 
         if os.path.isfile(scan_dir):
             files_scanned += 1
-            with open(scan_dir, "r") as f:
+            with open(scan_dir) as f:
                 content = f.read()
             rule_results.extend(self._check_file_wallet_compliance(content, scan_dir))
         elif os.path.isdir(scan_dir):
@@ -429,7 +429,7 @@ class QATestAgent:
                         full_path = os.path.join(root, fname)
                         files_scanned += 1
                         try:
-                            with open(full_path, "r") as f:
+                            with open(full_path) as f:
                                 content = f.read()
                             rule_results.extend(self._check_file_wallet_compliance(content, full_path))
                         except Exception as e:

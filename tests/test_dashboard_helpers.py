@@ -24,15 +24,11 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 import sqlite3
 import time
 from pathlib import Path
 
-import pytest
-
 import src.dashboard.app as dash
-
 
 # ---------------------------------------------------------------------------
 # _discover_chain_db

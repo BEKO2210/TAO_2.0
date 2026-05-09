@@ -25,13 +25,22 @@ from unittest.mock import patch
 import pytest
 
 from src.agents import (
-    DashboardDesignAgent, DocumentationAgent, FullstackDevAgent,
-    InfraDevopsAgent, MarketTradeAgent, MinerEngineeringAgent,
-    ProtocolResearchAgent, QATestAgent, RiskSecurityAgent,
-    SubnetDiscoveryAgent, SubnetScoringAgent, SystemCheckAgent,
-    TrainingExperimentAgent, ValidatorEngineeringAgent, WalletWatchAgent,
+    DashboardDesignAgent,
+    DocumentationAgent,
+    FullstackDevAgent,
+    InfraDevopsAgent,
+    MarketTradeAgent,
+    MinerEngineeringAgent,
+    ProtocolResearchAgent,
+    QATestAgent,
+    RiskSecurityAgent,
+    SubnetDiscoveryAgent,
+    SubnetScoringAgent,
+    SystemCheckAgent,
+    TrainingExperimentAgent,
+    ValidatorEngineeringAgent,
+    WalletWatchAgent,
 )
-
 
 _AGENT_DIR = Path(__file__).resolve().parent.parent / "src" / "agents"
 
@@ -156,7 +165,7 @@ def test_run_failure_returns_error_dict_not_raise(cls, task):
     with patch.object(agent, helper_name, side_effect=RuntimeError("boom-from-test")):
         try:
             out = agent.run(task)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             pytest.fail(
                 f"{cls.__name__}.run() raised {type(e).__name__} "
                 f"instead of returning an error dict: {e}"

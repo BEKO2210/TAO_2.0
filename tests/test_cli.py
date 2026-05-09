@@ -9,13 +9,11 @@ explicitly where it matters).
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 from click.testing import CliRunner
 
 from src.cli.tao_swarm import _config, cli
-
 
 # ---------------------------------------------------------------------------
 # _config: mode resolution

@@ -18,10 +18,10 @@ from src.orchestrator.context import AgentContext
 from src.orchestrator.progress import _OrchestratorProgressChannel
 from src.orchestrator.resilience import (
     CancelToken,
-    RetryPolicy,
-    TaskTimeoutError,
-    from_task_field as _resolve_retry_policy,
     run_with_resilience,
+)
+from src.orchestrator.resilience import (
+    from_task_field as _resolve_retry_policy,
 )
 from src.orchestrator.task_router import TaskRouter
 
@@ -632,12 +632,6 @@ class SwarmOrchestrator:
         for event in self.run_log:
             et = event.get("event_type", "unknown")
             event_types[et] = event_types.get(et, 0) + 1
-
-        # Safety status
-        danger_events = [
-            e for e in self.run_log
-            if e.get("event_type") == "task_blocked"
-        ]
 
         blocked_tasks = [
             e for e in self.run_log

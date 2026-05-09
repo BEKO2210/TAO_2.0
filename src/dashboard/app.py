@@ -19,7 +19,6 @@ import logging
 import os
 import sqlite3
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,10 +27,10 @@ logger = logging.getLogger(__name__)
 # ── Streamlit import with graceful fallback ───────────────────────────────
 
 try:
-    import streamlit as st
     import pandas as pd
     import plotly.express as px
     import plotly.graph_objects as go
+    import streamlit as st
     from plotly.subplots import make_subplots
     STREAMLIT_AVAILABLE = True
 except ImportError:
@@ -63,7 +62,8 @@ except ImportError:
     pd = _DummySt()
     px = _DummySt()
     go = _DummySt()
-    make_subplots = lambda *a, **k: None
+    def make_subplots(*_a, **_k):  # noqa: ARG001 — stub when plotly missing
+        return None
 
 # ── Page config ───────────────────────────────────────────────────────────
 
@@ -204,7 +204,7 @@ def safe_query(conn, query: str, params=None):
     try:
         cursor = conn.execute(query, params or ())
         return cursor.fetchall()
-    except Exception as exc:
+    except Exception:
         return []
 
 

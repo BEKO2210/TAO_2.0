@@ -12,8 +12,7 @@ Tests cover:
 
 import pytest
 
-from src.scoring.risk_score import RiskScorer, RISK_LEVELS, RISK_CATEGORY_WEIGHTS
-
+from src.scoring.risk_score import RISK_CATEGORY_WEIGHTS, RiskScorer
 
 # ---------------------------------------------------------------------------
 # Helpers

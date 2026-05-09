@@ -14,15 +14,12 @@ Covers:
 
 from __future__ import annotations
 
-import sys
 import types
-from typing import Any
 
 import pytest
 
 import src.collectors.chain_readonly as chain_module
 from src.collectors.chain_readonly import ChainReadOnlyCollector
-
 
 # ---------------------------------------------------------------------------
 # Mock-mode (default) — runs offline, hits no network

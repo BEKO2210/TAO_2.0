@@ -26,7 +26,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.orchestrator import (
-    AgentContext,
     CancelToken,
     RetryPolicy,
     SwarmOrchestrator,
@@ -37,7 +36,6 @@ from src.orchestrator.resilience import (
     run_with_resilience,
     run_with_timeout,
 )
-
 
 # ---------------------------------------------------------------------------
 # CancelToken

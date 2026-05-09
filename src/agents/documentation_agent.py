@@ -10,7 +10,6 @@ Provides documentation status reports.
 import logging
 import os
 import time
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -197,8 +196,6 @@ current system state. Generates documentation status reports
         Returns:
             README update result
         """
-        content = params.get("content", {})
-
         readme_sections: list[dict] = [
             {
                 "heading": "# TAO / Bittensor Multi-Agent System",

@@ -1,0 +1,99 @@
+# pyproject.toml — TAO_2.0
+#
+# This file is currently used as the single source of truth for project
+# metadata and tool configuration (ruff, mypy, pytest). It does NOT
+# declare a [build-system] yet because the package layout uses ``src/``
+# as the top-level Python package, which doesn't lend itself cleanly
+# to ``pip install`` without an invasive rename. That layout migration
+# is tracked separately; until it lands, install with::
+#
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# and run via the ``Makefile`` targets or the ``python -m src.cli.tao_swarm``
+# entry point.
+
+[project]
+name = "tao-swarm"
+version = "1.0.0"
+description = "Locally-run, read-only multi-agent intelligence system for Bittensor (TAO)."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+keywords = ["bittensor", "tao", "multi-agent", "orchestrator", "read-only"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# Runtime deps live in requirements.txt to stay compatible with the
+# existing Makefile and Docker setup. When the layout migration lands,
+# this section will be promoted to the source of truth.
+
+[project.urls]
+Repository = "https://github.com/BEKO2210/TAO_2.0"
+Issues = "https://github.com/BEKO2210/TAO_2.0/issues"
+
+# ---------------------------------------------------------------------------
+# Tool configuration
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [
+    "_templates",
+    "build",
+    "dist",
+    ".venv",
+]
+
+[tool.ruff.lint]
+# Initial baseline: pycodestyle errors, pyflakes, isort. The stricter
+# rule sets (B / UP / SIM / RUF) will be enabled in a follow-up
+# tightening pass once the existing codebase has been swept once.
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "E741",   # ambiguous variable names (`l`) — flagged by audit, follow-up
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # asserts in tests are fine
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+no_implicit_optional = true
+check_untyped_defs = true
+# Don't fail on missing imports for optional deps (bittensor, streamlit, etc.)
+ignore_missing_imports = true
+exclude = [
+    "_templates/",
+    "build/",
+    "dist/",
+]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+check_untyped_defs = false

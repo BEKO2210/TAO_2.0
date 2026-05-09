@@ -9,7 +9,6 @@ Provides experiment plans and hardware estimates.
 
 import logging
 import time
-from typing import Any
 
 logger = logging.getLogger(__name__)
 

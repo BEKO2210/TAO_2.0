@@ -314,7 +314,7 @@ class SystemCheckAgent:
         """Get CPU information string."""
         try:
             if platform.system() == "Linux":
-                with open("/proc/cpuinfo", "r") as f:
+                with open("/proc/cpuinfo") as f:
                     for line in f:
                         if "model name" in line:
                             return line.split(":")[1].strip()

@@ -11,7 +11,6 @@ import logging
 import os
 import sqlite3
 import time
-from typing import Optional
 
 import requests
 
@@ -108,7 +107,7 @@ class MarketDataCollector(BaseCollector):
             """)
             conn.commit()
 
-    def _cache_get(self, table: str, key_col: str, key_val: str) -> Optional[dict]:
+    def _cache_get(self, table: str, key_col: str, key_val: str) -> dict | None:
         """Retrieve cached data if not expired."""
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
@@ -139,7 +138,7 @@ class MarketDataCollector(BaseCollector):
             headers["x-cg-pro-api-key"] = self.api_key
         return headers
 
-    def _api_request(self, endpoint: str, params: Optional[dict] = None) -> dict:
+    def _api_request(self, endpoint: str, params: dict | None = None) -> dict:
         """Make a GET request to the CoinGecko API."""
         url = f"{COINGECKO_API_BASE}/{endpoint}"
         try:
@@ -180,7 +179,7 @@ class MarketDataCollector(BaseCollector):
             return data
 
         data = self._api_request(
-            f"simple/price",
+            "simple/price",
             {
                 "ids": TAO_COIN_ID,
                 "vs_currencies": "usd,btc,eth",

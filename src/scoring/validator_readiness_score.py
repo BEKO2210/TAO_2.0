@@ -9,10 +9,8 @@ Readiness levels: NOT_READY / PARTIAL / READY
 
 import logging
 import shutil
-import subprocess
-from typing import Optional
 
-from .miner_readiness_score import HARDWARE_TIERS, SOFTWARE_REQUIREMENTS, MinerReadinessScorer
+from .miner_readiness_score import MinerReadinessScorer
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +59,7 @@ class ValidatorReadinessScorer:
     Provides stake recommendations and readiness level classification.
     """
 
-    def __init__(self, config: Optional[dict] = None) -> None:
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the validator readiness scorer.
 

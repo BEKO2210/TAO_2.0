@@ -17,17 +17,15 @@ import re
 import types
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
 import src.collectors.chain_readonly as chain_module
 from src.collectors.chain_readonly import (
-    ChainReadOnlyCollector,
     _DEFAULT_FALLBACK_ENDPOINTS,
     _WRITE_METHODS_DENYLIST,
+    ChainReadOnlyCollector,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers: stubbed bittensor SDKs (modern v10 + legacy)
