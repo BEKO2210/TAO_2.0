@@ -3,6 +3,26 @@ GitHub Repository Collector
 
 Collects metadata from GitHub repositories for Bittensor subnet analysis.
 Uses the public GitHub API - no authentication required for basic operations.
+
+External-text safety
+--------------------
+
+GitHub returns user-controlled free-form text in two places:
+``repo.description`` and the README body. If we ever wire an LLM
+consumer to an agent that reads either field via the AgentContext,
+that text becomes a direct prompt-injection surface (OWASP Agentic
+2026 #1: Goal Hijacking). The collector applies light defensive
+sanitization at the boundary:
+
+- Strip C0/C1 control chars except ``\\n`` and ``\\t``.
+- Cap length (descriptions: 2 KB, READMEs: 256 KB).
+- Tag ``_meta.sanitized = True`` so consumers can audit.
+
+This is *defence in depth*, not a silver bullet. Aggressive
+prompt-injection-pattern stripping (e.g. matching "Ignore all
+previous instructions") would mangle legitimate text and produces
+a false sense of security. The LLM-consumer side is responsible
+for treating all collector text as untrusted.
 """
 
 import json
@@ -18,6 +38,38 @@ import requests
 from tao_swarm.collectors._base import BaseCollector
 
 logger = logging.getLogger(__name__)
+
+# Length caps for sanitized free-form text. Descriptions are
+# usually < 200 chars; 2 KB is generous. READMEs occasionally run
+# long but anything over 256 KB is either binary-encoded or an
+# attempt to bury injection content past a consumer's context
+# window — refuse those.
+_MAX_DESCRIPTION_CHARS = 2_048
+_MAX_README_CHARS = 256 * 1024
+
+# Pre-compiled regex for C0/C1 control characters except \n (\x0a)
+# and \t (\x09). Carriage return \x0d IS scrubbed — only \n and \t
+# are preserved per the contract.
+_CONTROL_CHARS_RE = re.compile(
+    r"[\x00-\x08\x0b-\x1f\x7f-\x9f]"
+)
+
+
+def sanitize_external_text(text: str | None, max_chars: int) -> str:
+    """
+    Light defensive scrub of user-controlled text from external sources.
+
+    Strips C0/C1 control characters (except newline and tab) and caps
+    length at ``max_chars``. Returns an empty string for ``None`` /
+    non-string input. Does NOT attempt prompt-injection-pattern
+    matching — that's the LLM-consumer's responsibility.
+    """
+    if not isinstance(text, str):
+        return ""
+    cleaned = _CONTROL_CHARS_RE.sub("", text)
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars]
+    return cleaned
 
 # Stable fixture for offline / use_mock_data=True. Plausible numbers for
 # a healthy public Bittensor-adjacent repository.
@@ -180,6 +232,16 @@ class GitHubRepoCollector(BaseCollector):
         """
         cached = self._cache_get(f"info:{repo_url}")
         if cached:
+            # Re-apply sanitization on cache-hits so legacy entries
+            # written before the boundary scrub was added can't
+            # silently bypass the new contract. Idempotent on already-
+            # clean payloads.
+            cached["description"] = sanitize_external_text(
+                cached.get("description", ""), _MAX_DESCRIPTION_CHARS,
+            )
+            meta = cached.get("_meta")
+            if isinstance(meta, dict):
+                meta.setdefault("sanitized", True)
             return cached
 
         owner, repo = self._parse_repo(repo_url)
@@ -193,7 +255,11 @@ class GitHubRepoCollector(BaseCollector):
                 "repo_url": repo_url,
                 "owner": owner,
                 "repo_name": repo,
-                "_meta": self._meta(mode),
+                # Mock fixtures have no untrusted text, but still tag
+                # ``sanitized`` so the field is present on every
+                # response and consumers don't have to special-case
+                # mock vs live.
+                "_meta": self._meta(mode, sanitized=True),
             }
             self._cache_set(f"info:{repo_url}", result)
             return result
@@ -207,7 +273,10 @@ class GitHubRepoCollector(BaseCollector):
             "owner": owner,
             "repo_name": repo,
             "full_name": data.get("full_name", f"{owner}/{repo}"),
-            "description": data.get("description", ""),
+            # Description is user-controlled — sanitize before storing.
+            "description": sanitize_external_text(
+                data.get("description", ""), _MAX_DESCRIPTION_CHARS,
+            ),
             "stars": data.get("stargazers_count", 0),
             "forks": data.get("forks_count", 0),
             "open_issues": data.get("open_issues_count", 0),
@@ -229,6 +298,11 @@ class GitHubRepoCollector(BaseCollector):
             "subscribers_count": data.get("subscribers_count", 0),
             "homepage": data.get("homepage", ""),
             "collected_at": int(time.time()),
+            # Inherit the BaseCollector-standard meta block (source /
+            # mode / fetched_at) and add ``sanitized`` so callers
+            # that audit cross-collector provenance still see the
+            # full contract on live responses too.
+            "_meta": self._meta(mode, sanitized=True),
         }
         self._cache_set(f"info:{repo_url}", result)
         logger.info("Fetched repo info for %s/%s (%d stars)", owner, repo, result["stars"])
@@ -238,15 +312,25 @@ class GitHubRepoCollector(BaseCollector):
         """
         Get the README content of a repository.
 
+        README bodies are user-controlled free-form text. The collector
+        applies length-cap + control-char scrub (see
+        ``sanitize_external_text``) before returning so downstream
+        consumers — including any future LLM in the loop — never see
+        raw upstream bytes.
+
         Args:
             repo_url: Full GitHub repository URL.
 
         Returns:
-            README text content or empty string.
+            Sanitized README text (≤ 256 KB), or empty string.
         """
         cached = self._cache_get(f"readme:{repo_url}")
         if cached:
-            return cached.get("content", "")
+            # Re-sanitize on cache-hit so legacy unsanitized entries
+            # can't slip through; idempotent on clean cached values.
+            return sanitize_external_text(
+                cached.get("content", ""), _MAX_README_CHARS,
+            )
 
         owner, repo = self._parse_repo(repo_url)
         if not owner or not repo:
@@ -265,7 +349,9 @@ class GitHubRepoCollector(BaseCollector):
                     raw_url = raw_url.replace("/main/", "/master/")
                     resp = requests.get(raw_url, timeout=self.timeout)
                 if resp.status_code == 200:
-                    content = resp.text
+                    content = sanitize_external_text(
+                        resp.text, _MAX_README_CHARS,
+                    )
                     self._cache_set(f"readme:{repo_url}", {"content": content})
                     return content
             except requests.exceptions.RequestException:
@@ -273,7 +359,10 @@ class GitHubRepoCollector(BaseCollector):
             return ""
 
         import base64
-        content = base64.b64decode(readme_data.get("content", "")).decode("utf-8", errors="replace")
+        raw = base64.b64decode(readme_data.get("content", "")).decode(
+            "utf-8", errors="replace",
+        )
+        content = sanitize_external_text(raw, _MAX_README_CHARS)
         self._cache_set(f"readme:{repo_url}", {"content": content})
         return content
 

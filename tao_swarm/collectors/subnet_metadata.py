@@ -17,6 +17,18 @@ from urllib.parse import urlparse
 import requests
 
 from tao_swarm.collectors._base import BaseCollector
+from tao_swarm.collectors.github_repos import sanitize_external_text
+
+# Cap GitHub-supplied descriptions before forwarding into the
+# context bus / SQLite cache. Mirrors
+# ``github_repos._MAX_DESCRIPTION_CHARS``.
+_DESC_CAP = 2_048
+
+
+def _sanitize_description(text: str) -> str:
+    """Wrapper for the github_repos sanitizer with our description cap."""
+    return sanitize_external_text(text, _DESC_CAP)
+
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +217,9 @@ class SubnetMetadataCollector(BaseCollector):
                 "language": data.get("language", "unknown"),
                 "created_at": data.get("created_at", ""),
                 "updated_at": data.get("updated_at", ""),
-                "description": data.get("description", ""),
+                # User-controlled free-form text — sanitize before
+                # publishing. See ``github_repos.sanitize_external_text``.
+                "description": _sanitize_description(data.get("description", "")),
                 "default_branch": data.get("default_branch", "main"),
                 "topics": data.get("topics", []),
                 "license": data.get("license", {}).get("name", "unknown") if data.get("license") else "none",
