@@ -25,11 +25,15 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 keywords = ["bittensor", "tao", "multi-agent", "orchestrator", "read-only"]
+# License classifier: BUSL is not OSI-approved (it's source-available,
+# not Open Source), so we use "Other/Proprietary License" per PEP 639
+# guidance. The actual license terms are in LICENSE; the SPDX
+# expression below names them precisely.
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",

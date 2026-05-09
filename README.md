@@ -3,13 +3,16 @@
 > Ein lokales, **read-only** Multi-Agentensystem zur Recherche, Analyse und Entscheidungsunterstützung im Bittensor (TAO)-Ökosystem. 15 spezialisierte Agenten arbeiten als Schwarm unter zentraler Governance — und du kannst eigene Agenten als **Plug-ins** hinzufügen.
 
 > **WICHTIG:** Dieses System führt **KEINE automatischen Transaktionen** durch, speichert **KEINE Private Keys oder Seed Phrases**, und gibt **KEINE Finanzberatung**. Jede DANGER-Aktion (Trade, Stake, Sign) wird vor der Ausführung blockiert und nur als Plan ausgegeben.
+>
+> **Lizenz & Nutzung:** Diese Software steht unter der [Business Source License 1.1](LICENSE) — **freie Nutzung nur für Non-Production**. Vor jeder Installation **bitte [DISCLAIMER.md](DISCLAIMER.md) und [LICENSE](LICENSE) lesen**. Production / kommerzielle Nutzung erfordert eine separate kommerzielle Lizenz.
 
-[![Tests](https://img.shields.io/badge/tests-368%20passing-brightgreen)]() [![License](https://img.shields.io/badge/license-MIT-blue)]() [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![Tests](https://img.shields.io/badge/tests-547%20passing-brightgreen)]() [![License](https://img.shields.io/badge/license-BUSL--1.1-orange)](LICENSE) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]() [![Status](https://img.shields.io/badge/status-Beta-yellow)]()
 
 ---
 
 ## Inhaltsverzeichnis
 
+- [Lizenz & rechtlicher Status](#lizenz--rechtlicher-status)
 - [Schnellüberblick](#schnellüberblick)
 - [Architektur](#architektur)
 - [Die 15 Agenten](#die-15-agenten)
@@ -29,18 +32,50 @@
 
 ---
 
+## Lizenz & rechtlicher Status
+
+Dieses Projekt steht unter der **Business Source License 1.1 (BUSL-1.1)** —
+nicht unter MIT, GPL oder einer anderen Open-Source-Lizenz. Du darfst die
+Software **kostenlos** nutzen, kopieren, modifizieren und weitergeben,
+solange deine Nutzung als **Non-Production Use** im Sinne der [LICENSE](LICENSE)
+gilt:
+
+- **Erlaubt** (ohne kommerzielle Lizenz):
+  - persönliche, schulische, Forschungs- und Evaluations-Nutzung
+  - Teams bis 5 Personen
+  - Read-only Recherche und Analyse, Mock-Mode für Entwicklung
+  - Eigene Plug-ins entwickeln und testen
+
+- **Nicht erlaubt** (braucht separate Lizenz vom Lizenzgeber):
+  - Hosting als Service für Dritte (gegen Bezahlung oder anderweitig)
+  - Automatisierte Trading-, Staking- oder Signing-Entscheidungen
+  - Einbettung in ein verkauftes / lizensiertes / gehostetes Produkt
+  - Production-Deployments jeder Art
+
+**Change Date: 2030-01-01.** An diesem Datum konvertiert die Software
+automatisch zur **Apache License 2.0** und wird vollständig Open Source.
+
+**Vor der Nutzung lesen:**
+- [LICENSE](LICENSE) — die Lizenz selbst inkl. "Additional Use Grant"
+- [DISCLAIMER.md](DISCLAIMER.md) — Risiko-, Haftungs- und Compliance-Hinweise
+
+> Wenn du irgendeinen Teil dieser Lizenz oder des Disclaimers nicht akzeptierst, **installiere und benutze diese Software nicht.**
+
+---
+
 ## Schnellüberblick
 
-| Bereich | Was wir bauen |
+| Bereich | Stand |
 |---|---|
-| **Agenten** | 15 deterministische Python-Agenten (kein LLM intern). Plus benutzerdefinierte **Plug-ins** aus deinem eigenen Repo. |
-| **Orchestrator** | Zentraler `SwarmOrchestrator` mit ApprovalGate, TaskRouter, AgentContext-Bus, optionaler **paralleler** Task-Ausführung. |
-| **Chain-Daten** | Echtes Bittensor SDK v10 (`SubtensorApi`) für `get_subnet_list`, `metagraph(lite=True)`, `recycle()`, `get_subnet_burn_cost()`, Hyperparameter. Per-Network-Cache. |
-| **Sicherheit** | DANGER-Actions geblockt. Bittensor-spezifische Detektoren: PyPI-Typosquats, Coldkey-Swap-Social-Engineering, Validator-Risiko. |
-| **Scoring** | 15 Kriterien — 10 personal-fit + 5 chain-derived (Taoflow, Validator-Konzentration, Weight-Consensus, Miner-Liveness, Owner-Aktivität). |
-| **Tests** | 368 grüne Tests, mock-default, opt-in `pytest -m network` für Live-Pfade. |
-| **Benchmarks** | 4 realistische Workload-Profile (Researcher / Operator / Watcher / Adversarial). `make bench`. |
-| **Distribution** | Lokal-only. Kein Cloud-Telemetry. Optional Streamlit-Dashboard. |
+| **Agenten** | 15 deterministische Python-Agenten (kein LLM intern). 5 davon konsumieren Live-Chain-/Marktdaten; die restlichen sind absichtlich Template-Emitter. Plus benutzerdefinierte **Plug-ins** aus deinem eigenen Repo. |
+| **Orchestrator** | Zentraler `SwarmOrchestrator` mit ApprovalGate (gate-before-route), TaskRouter, AgentContext-Bus, optionaler paralleler Task-Ausführung. |
+| **Chain-Daten** | Echtes Bittensor SDK 10.x (`SubtensorApi`) — auf Mainnet finney verifiziert: 129 Subnets, rich `DynamicInfo` mit owner / identity / github_repo / TAO_in / volume. Per-Network-Cache. `BT_READ_ONLY=1` als Default. |
+| **Live-Pfade** | Mainnet finney (Bittensor SDK), Subscan (Wallet), CoinGecko (Markt), GitHub (Repo-Metadata) — alle mit graceful Fallback und `_meta.fallback_reason`-Tagging. |
+| **Sicherheit** | DANGER-Actions geblockt vor Routing. Watch-only SS58-Validierung über `scalecodec`. Bittensor-spezifische Detektoren: PyPI-Typosquats, Coldkey-Swap-Social-Engineering, Validator-Risiko. Externe Texte sanitisiert am Collector-Boundary (OWASP-Agentic-2026 #1). |
+| **Scoring** | 10 Personal-Fit-Kriterien plus chain-derived Competition (basierend auf live `tao_in`-Stake, nicht hardcoded Listen). |
+| **Tests** | **547 default tests grün** + **10 Live-Smoke-Tests** gegen echte Endpoints (`pytest -m network`). |
+| **Distribution** | `pip install -e .` mit Console-Script `tao-swarm`. Lokal-only, kein Cloud-Telemetry. Optional Streamlit-Dashboard. |
+| **Lizenz** | BUSL-1.1, Change Date 2030-01-01 → Apache 2.0. |
 
 ---
 
@@ -326,23 +361,36 @@ TAO_2.0/
 
 ## Installation
 
+> Mit der Installation akzeptierst du [LICENSE](LICENSE) (BUSL-1.1) und
+> [DISCLAIMER.md](DISCLAIMER.md). **Bitte vorher lesen.**
+
 ### Voraussetzungen
 
 - Python 3.10+
 - Optional: Node.js (nur für Hygen-Scaffolding)
 - Optional: NVIDIA GPU + Treiber (für volle CUDA-Detection)
+- Optional: Bittensor SDK 10.x — wird lazy importiert, ohne fällt der
+  Chain-Collector auf Mock-Fixtures zurück
 
-### Option A: Lokal (pip)
+### Option A: Lokal als pip-Package (empfohlen)
 
 ```bash
 git clone https://github.com/BEKO2210/TAO_2.0.git
 cd TAO_2.0
 python -m venv .venv
 source .venv/bin/activate
+
 pip install -r requirements.txt -r requirements-dev.txt
+pip install -e .                        # installiert das Package + Console-Script
+
 cp .env.example .env
-pytest -q                            # 368 passing, 1 deselected (live)
+pytest -q                               # 547 passing, 11 deselected (network)
+tao-swarm --help
 ```
+
+Das `pip install -e .` legt den `tao-swarm`-Console-Script auf den
+PATH. Ab sofort funktionieren Aufrufe wie `tao-swarm subnets`,
+`tao-swarm --live market`, `tao-swarm run --task '{"type":"..."}'`.
 
 ### Option B: Docker
 
@@ -361,6 +409,17 @@ make bench    # alle Benchmarks (mock-only — netzfrei)
 make lint
 ```
 
+### Live-Smoke-Tests (opt-in, mit Netz)
+
+```bash
+# bittensor SDK installieren falls nicht schon vorhanden
+pip install bittensor
+
+# Smoke-Tests gegen echte Endpoints (Mainnet, Subscan, CoinGecko)
+pytest -m network tests/test_live_smoke.py -v
+# → 10 passed in ~30s
+```
+
 ---
 
 ## Quick Start
@@ -369,25 +428,38 @@ make lint
 # 1) System-Check (mock — keine Netz-Calls)
 tao-swarm check
 
-# 2) Subnet-Liste anzeigen
-tao-swarm subnets --limit 5
-# → MODE: mock (offline fixtures)  — pass --live for real data
+# 2) Live-Subnet-Liste von Mainnet (129 reale Subnets)
+tao-swarm --live subnets --limit 10
+#   ID  Name                 Sym     TAO_in       Volume  Description
+# ----  -------------------- --- ---------- ------------  ------------------
+#    1  Apex                   α     28,580      776,968  Open competitions for…
+#    4  Targon                 δ    133,782    2,011,066  Incentivized Compute…
+#    8  Vanta                  θ     85,632    1,307,691  The first decentral…
+# …
+# Total: 129 subnets
 
-# 3) Live-Daten von finney (braucht installiertes bittensor SDK)
-tao-swarm --live subnets --limit 5
-# → MODE: live (network=finney)
+# 3) Live-Markt (CoinGecko)
+tao-swarm --live market
 
-# 4) Subnet 12 scoren
-tao-swarm score 12 --detailed
+# 4) Subnet 1 (Apex) gegen Live-Chain scoren
+tao-swarm --live score 1
 
-# 5) Wallet beobachten (read-only)
+# 5) Wallet beobachten (watch-only, SS58 prefix-42 verifiziert)
 tao-swarm watch 5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy --label cold1
 
-# 6) Risk-Review eines Texts (z.B. einer Telegram-Nachricht)
+# 6) Risk-Review eines Texts (Social-Engineering-Detector)
 tao-swarm risk --content "Schedule_coldkey_swap to 5XYZ... within 5 days"
 # → DANGER: coldkey_swap_social_engineering CRITICAL
 
-# 7) Dashboard starten (Streamlit optional)
+# 7) Vollständigen Orchestrator-Run gegen Live-Chain
+tao-swarm --live run --task '{"type": "subnet_discovery"}'
+# Status: success | Agent: subnet_discovery_agent | output: 129 subnets
+
+# 8) DANGER-Action testen — wird gate-blockiert, nicht ausgeführt
+tao-swarm --live run --task '{"type": "execute_trade", "amount": 100}'
+# Status: blocked | Classification: DANGER | output: plan only
+
+# 9) Dashboard starten (Streamlit optional)
 tao-swarm dashboard
 ```
 
@@ -622,11 +694,15 @@ Plug-in schreiben, das deine eigenen Detektoren / Heuristiken implementiert. Plu
 
 ## Disclaimer
 
+> **Dies ist eine Zusammenfassung. Die volle, rechtsverbindliche Fassung steht in [DISCLAIMER.md](DISCLAIMER.md). Vor der Nutzung lesen.**
+
 Dieses System ist **kein Finanzberatungstool**, **keine Trading-Plattform**, und **kein Wallet-Manager**. Es ist ein lokales Recherche-Tool, das Daten aus öffentlichen Quellen aggregiert und Entscheidungs-Pläne (nicht Entscheidungen) produziert.
 
-- **Use at your own risk.** Bittensor-Investments können dein gesamtes Kapital kosten.
-- **Verify everything.** Daten aus Live-Collectors (`--live`) werden gecached, können stale sein, und durch Upstream-Bugs verfälscht werden.
-- **No warranty.** Siehe `LICENSE`.
+- **Keine Finanz-, Investment-, Steuer- oder Rechtsberatung.** Outputs sind maschinengeneriert und unkuratiert.
+- **Use at your own risk.** Bittensor- und Kryptowährungs-Investments können dein gesamtes Kapital kosten. Märkte sind volatil, Smart Contracts können Bugs haben, Endpoints können falsche Daten liefern, Off-Chain-Daten können stale oder manipuliert sein.
+- **Verify everything.** Daten aus Live-Collectors (`--live`) werden gecached, können stale sein, und durch Upstream-Bugs / Rate-Limits / SSL-Fehler verfälscht werden.
+- **No warranty.** Die Software wird "AS IS" bereitgestellt. Siehe [LICENSE](LICENSE) und [DISCLAIMER.md](DISCLAIMER.md). Keine Haftung für direkte, indirekte, zufällige, Folge- oder Strafschäden.
+- **Compliance ist deine Verantwortung.** Du bist verantwortlich für die Einhaltung aller Gesetze und Regelungen in deiner Jurisdiktion (Wertpapierrecht, AML/KYC, Steuern, Sanktionen, Datenschutz, Terms-of-Service der Drittanbieter-Endpoints).
 
 Die in `RiskSecurityAgent` codierten Bittensor-spezifischen Detektoren basieren auf real dokumentierten Vorfällen (Mai 2024, Aug 2025, Apr 2026 Covenant AI Exit). Sie sind **nicht erschöpfend** — neue Angriffsvektoren entstehen ständig. Treat the swarm's verdicts as **input to** your decision, never as **the** decision.
 
@@ -634,7 +710,12 @@ Die in `RiskSecurityAgent` codierten Bittensor-spezifischen Detektoren basieren 
 
 ## Lizenz
 
-MIT — see [`LICENSE`](LICENSE).
+**Business Source License 1.1** — siehe [`LICENSE`](LICENSE) für den
+vollständigen Text inklusive *Additional Use Grant* (Non-Production
+Use frei) und Change Date (2030-01-01 → Apache 2.0).
+
+Production-, kommerzielle oder Hosting-Nutzung erfordert eine separate
+schriftliche Lizenz. Anfragen über GitHub Issues.
 
 ## Beiträge
 
