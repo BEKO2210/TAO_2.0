@@ -110,6 +110,15 @@ _DANGER_ACTIONS: set[str] = {
     "create_hotkey",
     "create_coldkey",
     "regenerate_key",
+    # Coldkey rotation (the 5-day arbitrated swap is irreversible
+    # and is being weaponised by social-engineering campaigns —
+    # see RiskSecurityAgent.scan_coldkey_swap_pattern). Treat any
+    # action with this name as DANGER even outside an actual
+    # wallet context — the gate is about the planning surface,
+    # not just the runtime call.
+    "schedule_coldkey_swap",
+    "swap_coldkey",
+    "swap_hotkey",
     # Signing operations
     "sign_transaction",
     "sign_message",
@@ -150,6 +159,11 @@ _WALLET_PERMISSIONS: dict[str, Classification] = {
     "show_mnemonic": Classification.DANGER,
     "export_key": Classification.DANGER,
     "reveal_seed": Classification.DANGER,
+    # Coldkey rotation — irreversible after the 5-day arbitration
+    # window. Active vector for social-engineering campaigns.
+    "schedule_coldkey_swap": Classification.DANGER,
+    "swap_coldkey": Classification.DANGER,
+    "swap_hotkey": Classification.DANGER,
     "sign_transaction": Classification.DANGER,
     "sign_message": Classification.DANGER,
     "stake": Classification.DANGER,
