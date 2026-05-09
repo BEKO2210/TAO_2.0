@@ -446,23 +446,86 @@ class SubnetScoringAgent:
         }
 
     def _score_competition(self, subnet: dict) -> dict:
-        """Score competition level (higher = less competition = better)."""
+        """
+        Score competition level (higher score = less competition = better).
+
+        Prefers live chain economics when the input dict carries them
+        (i.e. came from ``ChainReadOnlyCollector.get_subnet_list()``):
+        ``tao_in`` (TAO locked in the alpha pool) is a direct proxy
+        for how much capital is competing for emissions on this
+        subnet. Falls back to a netuid heuristic for mock /
+        hand-built dicts that don't carry chain economics.
+
+        Live thresholds (TAO):
+          - > 100k tao_in  → very high competition (saturated)
+          -  10k – 100k    → high
+          -   1k – 10k     → medium
+          - <   1k         → low (opportunity)
+        """
         netuid = subnet.get("netuid", 0)
 
-        # Root subnet has highest competition
+        # Root subnet is special — validators only, no miner competition
+        # in the usual sense. Score it explicitly.
         if netuid == 0:
-            return {"score": 10, "reason": "Root subnet - highest competition (validators only)"}
+            return {
+                "score": 10,
+                "reason": "Root subnet - highest competition (validators only)",
+            }
 
-        # Popular subnets have more competition
+        # Live path: use chain-derived stake when present.
+        tao_in = subnet.get("tao_in")
+        if isinstance(tao_in, (int, float)) and tao_in > 0:
+            if tao_in > 100_000:
+                return {
+                    "score": 25,
+                    "reason": (
+                        f"Subnet {netuid}: very high stake "
+                        f"(τ{tao_in:,.0f} TAO_in) — saturated"
+                    ),
+                }
+            if tao_in > 10_000:
+                return {
+                    "score": 50,
+                    "reason": (
+                        f"Subnet {netuid}: high stake "
+                        f"(τ{tao_in:,.0f} TAO_in)"
+                    ),
+                }
+            if tao_in > 1_000:
+                return {
+                    "score": 70,
+                    "reason": (
+                        f"Subnet {netuid}: medium stake "
+                        f"(τ{tao_in:,.0f} TAO_in)"
+                    ),
+                }
+            return {
+                "score": 85,
+                "reason": (
+                    f"Subnet {netuid}: low stake "
+                    f"(τ{tao_in:,.0f} TAO_in) — opportunity"
+                ),
+            }
+
+        # Fallback: netuid heuristic for inputs without chain economics
+        # (mock data, hand-built test dicts, callers that pass only an id).
         high_competition = [1, 4, 5, 18, 19]
         medium_competition = [7, 8, 9, 11, 12]
 
         if netuid in high_competition:
-            return {"score": 30, "reason": f"Subnet {netuid} - high competition"}
-        elif netuid in medium_competition:
-            return {"score": 60, "reason": f"Subnet {netuid} - medium competition"}
-        else:
-            return {"score": 80, "reason": f"Subnet {netuid} - lower competition (opportunity)"}
+            return {
+                "score": 30,
+                "reason": f"Subnet {netuid} - high competition (heuristic)",
+            }
+        if netuid in medium_competition:
+            return {
+                "score": 60,
+                "reason": f"Subnet {netuid} - medium competition (heuristic)",
+            }
+        return {
+            "score": 80,
+            "reason": f"Subnet {netuid} - lower competition (heuristic)",
+        }
 
     def _score_reward_realism(self, subnet: dict) -> dict:
         """Score reward realism based on category and demand."""
