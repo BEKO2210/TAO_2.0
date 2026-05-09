@@ -162,6 +162,36 @@ def main() -> None:
             b.record(time.perf_counter() - t0)
     benchmarks.append(b)
 
+    # ---- bench: sequential vs parallel run ------------------------
+    # 30 mixed tasks across multiple agents. Parallel speedup will
+    # be modest because the workloads are tiny (Python GIL bites),
+    # but the bench locks the comparison in for future regressions.
+    mixed_tasks: list[dict] = []
+    for s in range(6):
+        mixed_tasks.extend(researcher_session(seed=s))
+
+    orch = _build_orchestrator()
+    orch.execute_run({"tasks": mixed_tasks[:5]})  # warm-up
+
+    with Benchmark("execute_run_sequential",
+                   iterations=len(mixed_tasks)) as b_seq:
+        t0 = time.perf_counter()
+        orch.execute_run({"tasks": mixed_tasks})
+        b_seq.record(time.perf_counter() - t0)
+    b_seq.metadata["task_count"] = len(mixed_tasks)
+    benchmarks.append(b_seq)
+
+    orch = _build_orchestrator()
+    orch.execute_run({"tasks": mixed_tasks[:5]})  # warm-up
+    with Benchmark("execute_run_parallel_4",
+                   iterations=len(mixed_tasks)) as b_par:
+        t0 = time.perf_counter()
+        orch.execute_run({"tasks": mixed_tasks}, parallel=True, max_workers=4)
+        b_par.record(time.perf_counter() - t0)
+    b_par.metadata["task_count"] = len(mixed_tasks)
+    b_par.metadata["max_workers"] = 4
+    benchmarks.append(b_par)
+
     # ---- bench: bare execute_task overhead -------------------------
     # Use a cheap agent (protocol_research is pure-Python, no subprocess
     # or SQLite writes) so we measure orchestrator framing cost rather

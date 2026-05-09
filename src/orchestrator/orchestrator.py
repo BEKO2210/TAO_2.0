@@ -8,7 +8,9 @@ and report generation across all 15 specialized agents.
 
 import logging
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from src.orchestrator.approval_gate import ApprovalGate
@@ -55,6 +57,14 @@ class SwarmOrchestrator:
         self.context: AgentContext = AgentContext()
         self._safety_override: bool = config.get("safety_override", False)
         self._start_time: float = time.time()
+        # Thread-safety primitives. _log_lock guards run_log mutations
+        # (multiple workers can append events concurrently). _agent_locks
+        # serialise calls into the same agent instance — different agents
+        # can still run in parallel — because most agents keep mutable
+        # ``self._status`` / counters that aren't safe to race on.
+        self._log_lock: threading.Lock = threading.Lock()
+        self._agent_locks: dict[str, threading.Lock] = {}
+        self._agent_locks_lock: threading.Lock = threading.Lock()
 
         logger.info(
             "SwarmOrchestrator initialized (wallet_mode=%s, safety_override=%s)",
@@ -223,12 +233,15 @@ class SwarmOrchestrator:
                     "executed": False,
                 }
 
-            # Run the agent
+            # Run the agent. Hold the per-agent lock so two parallel
+            # execute_task calls into the *same* agent serialise; tasks
+            # against *different* agents still run concurrently.
             logger.info(
                 "Executing task via %s (classification=%s)",
                 agent_name, classification.value,
             )
-            output = agent.run(task)
+            with self._agent_lock(agent_name):
+                output = agent.run(task)
 
             # Lift the agent's internal per-call ``status`` field (e.g.
             # "complete", "snapshot", "plan_created", "INSUFFICIENT_DATA",
@@ -286,18 +299,32 @@ class SwarmOrchestrator:
 
         return result
 
-    def execute_run(self, run_plan: dict) -> dict:
+    def execute_run(
+        self,
+        run_plan: dict,
+        parallel: bool = False,
+        max_workers: int = 4,
+    ) -> dict:
         """
         Execute a multi-task run plan.
 
-        Each task in the plan is validated and executed sequentially.
-        DANGER tasks are blocked and returned as plans.
+        DANGER tasks are blocked at the gate (per ``execute_task``)
+        regardless of mode — concurrency never weakens the safety
+        contract.
 
         Args:
-            run_plan: Dictionary with 'tasks' list, each with 'type' and 'params'
+            run_plan: Dictionary with 'tasks' list, each with 'type'
+                and 'params'.
+            parallel: When True, dispatch tasks via a thread pool.
+                Different agents run concurrently; calls into the same
+                agent serialise via per-agent locks. Default False so
+                existing callers see no behaviour change.
+            max_workers: Thread pool size used when ``parallel`` is True.
+                Capped to ``len(tasks)`` so we don't spawn idle workers.
 
         Returns:
-            Run result with 'results' list, 'summary', and 'next_actions'
+            Run result with 'results' list (in the same order as the
+            input tasks), 'summary', and 'next_actions'.
         """
         tasks = run_plan.get("tasks", [])
         if not tasks:
@@ -308,27 +335,23 @@ class SwarmOrchestrator:
             }
 
         run_id = run_plan.get("run_id", f"run_{int(time.time())}")
+        logger.info("=" * 60)
         logger.info(
-            "=" * 60
-        )
-        logger.info(
-            "Starting run: %s with %d tasks", run_id, len(tasks)
+            "Starting run: %s with %d tasks (parallel=%s)",
+            run_id, len(tasks), parallel,
         )
 
         self._log_event(
             event_type="run_start",
             run_id=run_id,
             task_count=len(tasks),
+            parallel=parallel,
         )
-
-        results: list[dict] = []
-        success_count = 0
-        blocked_count = 0
-        error_count = 0
 
         # Validate the entire plan through the approval gate
         plan_validation = self.approval_gate.validate_plan({
-            "actions": [{"type": t.get("type", "unknown"), "params": t.get("params", {})} for t in tasks]
+            "actions": [{"type": t.get("type", "unknown"),
+                         "params": t.get("params", {})} for t in tasks]
         })
 
         logger.info(
@@ -337,20 +360,20 @@ class SwarmOrchestrator:
             plan_validation["valid"],
         )
 
-        for idx, task in enumerate(tasks):
-            logger.info(
-                "Executing task %d/%d: %s", idx + 1, len(tasks), task.get("type", "?")
-            )
+        if parallel:
+            results = self._execute_tasks_parallel(tasks, max_workers)
+        else:
+            results = []
+            for idx, task in enumerate(tasks):
+                logger.info(
+                    "Executing task %d/%d: %s",
+                    idx + 1, len(tasks), task.get("type", "?"),
+                )
+                results.append(self.execute_task(task))
 
-            result = self.execute_task(task)
-            results.append(result)
-
-            if result["status"] == "success":
-                success_count += 1
-            elif result["status"] == "blocked":
-                blocked_count += 1
-            else:
-                error_count += 1
+        success_count = sum(1 for r in results if r["status"] == "success")
+        blocked_count = sum(1 for r in results if r["status"] == "blocked")
+        error_count = sum(1 for r in results if r["status"] not in ("success", "blocked"))
 
         # Detect conflicts across results
         conflicts = self.detect_conflicts(results)
@@ -661,6 +684,54 @@ class SwarmOrchestrator:
 
         return next_actions
 
+    def _execute_tasks_parallel(
+        self,
+        tasks: list[dict],
+        max_workers: int,
+    ) -> list[dict]:
+        """
+        Run ``tasks`` concurrently via ``ThreadPoolExecutor``.
+
+        Per-task safety lives inside ``execute_task`` itself:
+
+        - The ApprovalGate runs *before* any agent is touched, so DANGER
+          tasks are blocked the same way they are in sequential mode.
+        - ``_log_event`` writes through ``_log_lock``, so the run_log
+          stays well-formed across workers.
+        - Per-agent locks (``_agent_lock``) serialise calls into the
+          same agent instance — different agents run concurrently;
+          the same agent invoked twice is queued.
+
+        Returns results in the same order as ``tasks`` so callers can
+        zip(tasks, results) regardless of completion order.
+        """
+        worker_count = min(max_workers, len(tasks))
+        results: list[dict | None] = [None] * len(tasks)
+        with ThreadPoolExecutor(
+            max_workers=worker_count,
+            thread_name_prefix="tao-task",
+        ) as pool:
+            future_to_idx = {
+                pool.submit(self.execute_task, task): idx
+                for idx, task in enumerate(tasks)
+            }
+            for fut in as_completed(future_to_idx):
+                idx = future_to_idx[fut]
+                try:
+                    results[idx] = fut.result()
+                except Exception as exc:  # pragma: no cover - guard
+                    logger.exception("Worker for task %d raised: %s", idx, exc)
+                    results[idx] = {
+                        "status": "error",
+                        "error": f"Worker exception: {exc}",
+                        "task_type": tasks[idx].get("type", "unknown"),
+                        "executed": False,
+                    }
+        # Fill any None slots defensively (shouldn't happen, but keeps
+        # the return type honest).
+        return [r if r is not None else {"status": "error", "executed": False}
+                for r in results]
+
     def _validate_task_input(self, task: dict) -> dict:
         """
         Validate a task dictionary has required fields.
@@ -733,6 +804,9 @@ class SwarmOrchestrator:
         """
         Log an event to the run log.
 
+        Thread-safe: takes ``_log_lock`` so concurrent ``execute_task``
+        workers can't drop or interleave events into ``run_log``.
+
         Args:
             **kwargs: Event fields to record
         """
@@ -740,7 +814,26 @@ class SwarmOrchestrator:
             "timestamp": time.time(),
             **kwargs,
         }
-        self.run_log.append(event)
+        with self._log_lock:
+            self.run_log.append(event)
+
+    def _agent_lock(self, agent_name: str) -> threading.Lock:
+        """
+        Return the per-agent serialisation lock, creating it lazily.
+
+        Most agents keep mutable instance state (``self._status``,
+        counters, last-seen timestamps, …) that isn't safe to mutate
+        from multiple threads at once. The parallel ``execute_run``
+        path therefore acquires this lock before calling ``agent.run``,
+        so two tasks that route to **different** agents run concurrently
+        but two tasks routed to the **same** agent serialise.
+        """
+        with self._agent_locks_lock:
+            lock = self._agent_locks.get(agent_name)
+            if lock is None:
+                lock = threading.Lock()
+                self._agent_locks[agent_name] = lock
+            return lock
 
     def _generate_recommendations(self) -> list[dict]:
         """
