@@ -22,6 +22,7 @@ Or use the npm script aliases: `npm run new:agent`, `npm run new:collector`, etc
 | `scoring`   | `src/scoring/<name>_score.py` + `tests/test_<name>_score.py`            |
 | `test`      | `tests/test_<name>.py` (variants for agent / collector / scoring)       |
 | `doc`       | `docs/<name>.md`                                                        |
+| `plugin`    | external `<out_dir>/<name>_agent.py` + test + README — for **user-defined plug-ins** that live OUTSIDE this repo. See `docs/plugins.md`. |
 
 All generated agents follow the agent interface contract from `SPEC.md`:
 `run`, `get_status`, `validate_input`, `AGENT_NAME`, `AGENT_VERSION`.
