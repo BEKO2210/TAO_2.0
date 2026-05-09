@@ -39,6 +39,7 @@ Public surface
 
 from __future__ import annotations
 
+from tao_swarm.trading.backtest import Backtester, BacktestResult
 from tao_swarm.trading.executor import ExecResult, Executor
 from tao_swarm.trading.guards import (
     DailyLossLimit,
@@ -55,9 +56,11 @@ from tao_swarm.trading.keystore import (
 )
 from tao_swarm.trading.ledger import PaperLedger, TradeRecord
 from tao_swarm.trading.modes import WalletMode
-from tao_swarm.trading.strategy_base import Strategy, TradeProposal
+from tao_swarm.trading.strategy_base import Strategy, StrategyMeta, TradeProposal
 
 __all__ = [
+    "BacktestResult",
+    "Backtester",
     "DailyLossLimit",
     "ExecResult",
     "Executor",
@@ -70,6 +73,7 @@ __all__ = [
     "PositionCap",
     "SignerHandle",
     "Strategy",
+    "StrategyMeta",
     "TradeProposal",
     "TradeRecord",
     "WalletMode",
