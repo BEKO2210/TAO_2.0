@@ -48,9 +48,10 @@ _MAX_DESCRIPTION_CHARS = 2_048
 _MAX_README_CHARS = 256 * 1024
 
 # Pre-compiled regex for C0/C1 control characters except \n (\x0a)
-# and \t (\x09).
+# and \t (\x09). Carriage return \x0d IS scrubbed — only \n and \t
+# are preserved per the contract.
 _CONTROL_CHARS_RE = re.compile(
-    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]"
+    r"[\x00-\x08\x0b-\x1f\x7f-\x9f]"
 )
 
 
@@ -231,6 +232,16 @@ class GitHubRepoCollector(BaseCollector):
         """
         cached = self._cache_get(f"info:{repo_url}")
         if cached:
+            # Re-apply sanitization on cache-hits so legacy entries
+            # written before the boundary scrub was added can't
+            # silently bypass the new contract. Idempotent on already-
+            # clean payloads.
+            cached["description"] = sanitize_external_text(
+                cached.get("description", ""), _MAX_DESCRIPTION_CHARS,
+            )
+            meta = cached.get("_meta")
+            if isinstance(meta, dict):
+                meta.setdefault("sanitized", True)
             return cached
 
         owner, repo = self._parse_repo(repo_url)
@@ -315,7 +326,11 @@ class GitHubRepoCollector(BaseCollector):
         """
         cached = self._cache_get(f"readme:{repo_url}")
         if cached:
-            return cached.get("content", "")
+            # Re-sanitize on cache-hit so legacy unsanitized entries
+            # can't slip through; idempotent on clean cached values.
+            return sanitize_external_text(
+                cached.get("content", ""), _MAX_README_CHARS,
+            )
 
         owner, repo = self._parse_repo(repo_url)
         if not owner or not repo:
