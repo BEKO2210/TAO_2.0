@@ -45,6 +45,14 @@ from tao_swarm.trading.guards import (
     KillSwitch,
     PositionCap,
 )
+from tao_swarm.trading.keystore import (
+    Keystore,
+    KeystoreError,
+    KeystoreFormatError,
+    KeystoreInfo,
+    SignerHandle,
+    WrongPasswordError,
+)
 from tao_swarm.trading.ledger import PaperLedger, TradeRecord
 from tao_swarm.trading.modes import WalletMode
 from tao_swarm.trading.strategy_base import Strategy, TradeProposal
@@ -54,10 +62,16 @@ __all__ = [
     "ExecResult",
     "Executor",
     "KillSwitch",
+    "Keystore",
+    "KeystoreError",
+    "KeystoreFormatError",
+    "KeystoreInfo",
     "PaperLedger",
     "PositionCap",
+    "SignerHandle",
     "Strategy",
     "TradeProposal",
     "TradeRecord",
     "WalletMode",
+    "WrongPasswordError",
 ]

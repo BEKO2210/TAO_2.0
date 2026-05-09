@@ -56,6 +56,9 @@ rich>=13.7.0
 
 # --- SICHERHEIT ---
 cryptography>=41.0.0
+# Argon2id is the OWASP-recommended password KDF for the keystore
+# in tao_swarm.trading.keystore (PR 2C of the AUTO_TRADING pivot).
+argon2-cffi>=23.1.0
 
 # --- TESTING (fuer CI) ---
 pytest>=7.4.0
