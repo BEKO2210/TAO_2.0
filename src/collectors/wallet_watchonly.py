@@ -255,6 +255,16 @@ class WalletWatchOnlyCollector(BaseCollector):
         if cached:
             return cached
 
+        # Note: this collector currently has no live Subscan integration —
+        # all balances are deterministic mocks derived from the address.
+        # The _resolve_mode call still records use_mock_data so consumers
+        # can audit data provenance via the _meta block. A live Subscan
+        # path is a follow-up.
+        mode = self._resolve_mode(
+            live_available=False,
+            reason_when_unavailable="Subscan integration not yet implemented",
+        )
+
         # Fallback: generate deterministic mock data
         h = hashlib.sha256(f"balance:{address}".encode()).hexdigest()
         free = round(float(int(h[:16], 16)) / 1e12, 6)
@@ -268,6 +278,7 @@ class WalletWatchOnlyCollector(BaseCollector):
             "frozen": 0.0,
             "misc_frozen": 0.0,
             "timestamp": int(time.time()),
+            "_meta": self._meta(mode),
         }
         self._cache_set("balance_cache", "address", address, result)
         return result
@@ -340,6 +351,11 @@ class WalletWatchOnlyCollector(BaseCollector):
         if cached:
             return cached
 
+        mode = self._resolve_mode(
+            live_available=False,
+            reason_when_unavailable="Subscan integration not yet implemented",
+        )
+
         h = hashlib.sha256(f"staking:{address}".encode()).hexdigest()
         staked = round(float(int(h[:16], 16)) / 1e12, 6)
         delegated = round(float(int(h[16:32], 16)) / 1e13, 6)
@@ -365,6 +381,7 @@ class WalletWatchOnlyCollector(BaseCollector):
             "delegations": delegations,
             "estimated_apy_pct": round(8.0 + (float(int(h[:4], 16)) / 65535) * 12, 2),
             "timestamp": int(time.time()),
+            "_meta": self._meta(mode),
         }
         self._cache_set("staking_cache", "address", address, result)
         return result

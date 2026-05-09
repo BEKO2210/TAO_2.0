@@ -144,7 +144,8 @@ class SubnetMetadataCollector(BaseCollector):
             repo_url: Full GitHub repository URL (e.g. https://github.com/owner/repo).
 
         Returns:
-            Dictionary with stars, forks, activity, README excerpt, etc.
+            Dictionary with stars, forks, activity, README excerpt, etc.,
+            plus a ``_meta`` block tagging mock vs live.
         """
         cached = self._github_from_cache(repo_url)
         if cached:
@@ -156,6 +157,33 @@ class SubnetMetadataCollector(BaseCollector):
             return {"error": "Invalid GitHub URL", "url": repo_url}
 
         owner, repo = path_parts[0], path_parts[1]
+
+        mode = self._resolve_mode()
+        if mode == "mock":
+            result = {
+                "repo_url": repo_url,
+                "owner": owner,
+                "repo_name": repo,
+                "stars": 100,
+                "forks": 25,
+                "open_issues": 8,
+                "language": "Python",
+                "created_at": "2023-01-01T00:00:00Z",
+                "updated_at": "2024-06-01T10:00:00Z",
+                "description": f"Mock metadata for {owner}/{repo}",
+                "default_branch": "main",
+                "topics": ["bittensor", "subnet"],
+                "license": "MIT",
+                "size_kb": 1024,
+                "watchers": 50,
+                "archived": False,
+                "is_fork": False,
+                "collected_at": int(time.time()),
+                "_meta": self._meta(mode),
+            }
+            self._github_to_cache(repo_url, result)
+            return result
+
         api_url = f"https://api.github.com/repos/{owner}/{repo}"
         headers = {"Accept": "application/vnd.github.v3+json"}
         if self.github_token:
@@ -187,6 +215,7 @@ class SubnetMetadataCollector(BaseCollector):
                 "archived": data.get("archived", False),
                 "is_fork": data.get("fork", False),
                 "collected_at": int(time.time()),
+                "_meta": self._meta(mode, api="github.com/api"),
             }
             self._github_to_cache(repo_url, result)
             logger.info("Collected GitHub metadata for %s/%s (%d stars)", owner, repo, result["stars"])
@@ -226,6 +255,26 @@ class SubnetMetadataCollector(BaseCollector):
         cached = self._docs_from_cache(docs_url)
         if cached:
             return cached
+
+        mode = self._resolve_mode()
+        if mode == "mock":
+            result = {
+                "docs_url": docs_url,
+                "title": "Mock Documentation Page",
+                "http_status": 200,
+                "content_length": 4096,
+                "headings_h1": 1,
+                "headings_h2": 5,
+                "code_blocks": 12,
+                "links": 30,
+                "has_installation": True,
+                "has_api_docs": True,
+                "has_examples": True,
+                "collected_at": int(time.time()),
+                "_meta": self._meta(mode),
+            }
+            self._docs_to_cache(docs_url, result)
+            return result
 
         try:
             resp = requests.get(docs_url, timeout=self.timeout, allow_redirects=True)
