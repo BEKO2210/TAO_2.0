@@ -154,6 +154,71 @@ def test_live_path_falls_back_to_mock_when_sdk_missing(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Cache isolation: mock and live runs must never share a cache row
+# ---------------------------------------------------------------------------
+
+def test_db_path_namespaced_by_network(tmp_path):
+    db = tmp_path / "chain_cache.db"
+    mock_c = ChainReadOnlyCollector({"db_path": str(db), "network": "mock"})
+    finney_c = ChainReadOnlyCollector({"db_path": str(db), "network": "finney", "use_mock_data": False})
+    assert mock_c.db_path != finney_c.db_path
+    assert mock_c.db_path.endswith(".mock.db")
+    assert finney_c.db_path.endswith(".finney.db")
+
+
+def test_pre_namespaced_path_is_not_double_namespaced(tmp_path):
+    """If the caller already passed a path containing the network, don't
+    append it again — keeps user-controlled paths predictable."""
+    pre = str(tmp_path / "chain_cache.finney.db")
+    c = ChainReadOnlyCollector({"db_path": pre, "network": "finney", "use_mock_data": False})
+    assert c.db_path == pre
+
+
+def test_mock_run_does_not_poison_live_cache(tmp_path, monkeypatch):
+    """The original bug: a --mock run wrote subnets under (netuid=-1),
+    a subsequent --live run read the same row and got mock data back.
+    With per-network namespacing, the two caches are separate files
+    and cannot collide."""
+    import types
+    fake_bt = types.ModuleType("bittensor")
+
+    class FakeSubtensor:
+        def __init__(self, network: str) -> None:
+            pass
+        def get_subnets(self):
+            return [42, 99]
+
+    fake_bt.subtensor = FakeSubtensor  # type: ignore[attr-defined]
+    monkeypatch.setattr(chain_module, "_try_import_bittensor", lambda: fake_bt)
+
+    db = tmp_path / "chain_cache.db"
+
+    # 1) Mock run populates its own cache.
+    mock_c = ChainReadOnlyCollector({"db_path": str(db), "network": "mock"})
+    mock_subs = mock_c.get_subnet_list()
+    mock_netuids = {s["netuid"] for s in mock_subs}
+
+    # 2) Live run reads from a different cache file and gets the
+    #    stubbed live data, NOT the mock data we just wrote.
+    live_c = ChainReadOnlyCollector({
+        "db_path": str(db),
+        "network": "finney",
+        "use_mock_data": False,
+    })
+    live_subs = live_c.get_subnet_list()
+    live_netuids = {s["netuid"] for s in live_subs}
+
+    assert live_netuids == {42, 99}
+    assert live_netuids != mock_netuids
+
+    # 3) Mock run again sees the original mock data (its cache wasn't
+    #    overwritten by the live run).
+    mock_c2 = ChainReadOnlyCollector({"db_path": str(db), "network": "mock"})
+    mock_subs2 = mock_c2.get_subnet_list()
+    assert {s["netuid"] for s in mock_subs2} == mock_netuids
+
+
+# ---------------------------------------------------------------------------
 # Live integration test against finney mainnet (opt-in)
 # ---------------------------------------------------------------------------
 

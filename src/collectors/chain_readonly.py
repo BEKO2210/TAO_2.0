@@ -178,15 +178,40 @@ class ChainReadOnlyCollector(BaseCollector):
         # an opt-in to mock data even when use_mock_data wasn't set.
         if self.network == "mock":
             self.use_mock_data = True
-        self.db_path = config.get("db_path", "data/chain_cache.db")
+
+        # Namespace the cache file by network so mock fixtures and live
+        # chain data can never share a row. Without this, a `--mock` run
+        # poisons the cache for a subsequent `--live` run (and vice
+        # versa) because the cache key is just `netuid`.
+        configured_path = config.get("db_path", "data/chain_cache.db")
+        self.db_path = self._namespace_db_path(configured_path, self.network)
 
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
         self._subtensor: Any = None  # lazily-loaded bittensor.subtensor
         logger.info(
-            "ChainReadOnlyCollector initialized (network=%s, use_mock_data=%s)",
-            self.network, self.use_mock_data,
+            "ChainReadOnlyCollector initialized (network=%s, use_mock_data=%s, db=%s)",
+            self.network, self.use_mock_data, os.path.basename(self.db_path),
         )
+
+    @staticmethod
+    def _namespace_db_path(path: str, network: str) -> str:
+        """
+        Insert ``.<network>`` before the file extension.
+
+        ``data/chain_cache.db`` + ``finney`` → ``data/chain_cache.finney.db``
+
+        If the configured path already contains ``.<network>`` we leave
+        it alone so callers that explicitly pre-namespaced the path
+        don't end up with double-namespacing.
+        """
+        if not network:
+            return path
+        base, ext = os.path.splitext(path)
+        suffix = f".{network}"
+        if base.endswith(suffix):
+            return path
+        return f"{base}{suffix}{ext}"
 
     # ── Database ──────────────────────────────────────────────────────────
 
