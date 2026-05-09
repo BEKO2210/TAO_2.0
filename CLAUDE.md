@@ -87,7 +87,17 @@ npx hygen collector new    # creates src/collectors/<name>.py
 npx hygen scoring new      # creates src/scoring/<name>_score.py + tests/test_<name>_score.py
 npx hygen test new         # creates tests/test_<name>.py (variants per kind)
 npx hygen doc new          # creates docs/<name>.md
+npx hygen plugin new       # external plug-in scaffold (lives OUTSIDE this repo)
 ```
+
+## Plug-ins (user-defined external agents)
+
+Users add their own agents (e.g. `MicroFish`, `CricketBrain`) via
+`src/orchestrator.load_plugins(orch, paths=[...], entry_point_group="tao.agents")`.
+Plug-ins must obey the SPEC.md agent contract (run / get_status /
+validate_input + AGENT_NAME / AGENT_VERSION) and are routed through
+the same `ApprovalGate` as built-ins — loading a plug-in does **not**
+raise its trust level. See `docs/plugins.md` for the full guide.
 
 Aliases: `npm run new:agent`, `npm run new:collector`, `npm run new:scoring`, `npm run new:test`, `npm run new:doc`.
 
