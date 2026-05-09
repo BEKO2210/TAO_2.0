@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — License: BUSL-1.1 → fully proprietary
+
+The owner has elected to take the project closed-source. The previous
+"source-available, free for non-production, auto-converts to Apache
+2.0 on 2030-01-01" framing is replaced with a fully proprietary
+"All Rights Reserved" licence. The repository remains visible on
+GitHub for evaluation, but no use, copy, modify, distribute,
+sublicense, or trademark rights are granted to anyone other than the
+Licensor or under a separate written licence agreement.
+
+What changed
+- `LICENSE`: replaced with a 10-section proprietary licence
+  (no implied permissions; evaluation-viewing only; no reverse
+  engineering except where mandatory law overrides; no trademark
+  grant; earlier-version licences (MIT / BUSL-1.1) remain valid
+  only for the snapshots they covered).
+- `DISCLAIMER.md`: section 4 updated — `AUTO_TRADING` is intended
+  for use only by the Licensor and individuals expressly licensed
+  in writing; no public Additional Use Grant any more.
+- `README.md`: top notice rewritten ("All rights reserved … keine
+  Nutzungserlaubnis"), license badge changed to "Proprietary",
+  installation / quickstart sections gated on having a separate
+  written licence, full Lizenz-Section rewritten with two columns
+  (Erlaubt-ohne-Lizenz vs. Erfordert-schriftliche-Lizenz),
+  Schnellüberblick row updated.
+- `landing/index.html` + `landing/de.html`: Hero eyebrow says
+  "Proprietary" instead of "BUSL-1.1"; license section rewritten
+  in the same shape; roadmap "Now" row says "Closed beta ·
+  proprietary"; Apache-2030 row removed; commercial-license row
+  rephrased to acknowledge that source remains proprietary.
+- `pyproject.toml`: header comment rewritten; "License classifier"
+  comment simplified; `License :: Other/Proprietary License`
+  classifier kept (already correct per PEP 639).
+
+Effect on prior public versions
+- Anyone who legitimately obtained the software under MIT (very
+  early) or BUSL-1.1 (PRs #27 → #45) keeps the rights granted by
+  *that* licence on *those* snapshots. Going forward, every commit
+  is governed by the new proprietary licence.
+
+
+
 ### Architectural pivot — `AUTO_TRADING` mode authorised
 
 The owner has authorised an architectural pivot: in addition to the

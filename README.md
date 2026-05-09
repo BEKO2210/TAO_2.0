@@ -17,9 +17,15 @@
 > Vor jeder Installation **bitte [DISCLAIMER.md](DISCLAIMER.md) und
 > [LICENSE](LICENSE) lesen.**
 >
-> **Lizenz & Nutzung:** Diese Software steht unter der [Business Source License 1.1](LICENSE) — **freie Nutzung nur für Non-Production**. Vor jeder Installation **bitte [DISCLAIMER.md](DISCLAIMER.md) und [LICENSE](LICENSE) lesen**. Production / kommerzielle Nutzung erfordert eine separate kommerzielle Lizenz.
+> **Lizenz & Nutzung:** Diese Software ist **proprietär**. Alle
+> Rechte vorbehalten. Es wird **keine Nutzungserlaubnis** an Dritte
+> erteilt — kein Recht zu installieren, auszuführen, zu kopieren, zu
+> modifizieren oder weiterzugeben. Quellcode kann zu Evaluationszwecken
+> eingesehen werden; Nutzung erfordert eine separate, schriftliche
+> Lizenzvereinbarung mit dem Lizenzgeber. Vor jedem Zugriff bitte
+> [LICENSE](LICENSE) und [DISCLAIMER.md](DISCLAIMER.md) lesen.
 
-[![Tests](https://img.shields.io/badge/tests-547%20passing-brightgreen)]() [![License](https://img.shields.io/badge/license-BUSL--1.1-orange)](LICENSE) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]() [![Status](https://img.shields.io/badge/status-Beta-yellow)]()
+[![Tests](https://img.shields.io/badge/tests-547%20passing-brightgreen)]() [![License](https://img.shields.io/badge/license-Proprietary-red)](LICENSE) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]() [![Status](https://img.shields.io/badge/status-Beta-yellow)]()
 
 ---
 
@@ -47,34 +53,39 @@
 
 ## Lizenz & rechtlicher Status
 
-Dieses Projekt steht unter der **Business Source License 1.1 (BUSL-1.1)** —
-nicht unter MIT, GPL oder einer anderen Open-Source-Lizenz. Du darfst die
-Software **kostenlos** nutzen, kopieren, modifizieren und weitergeben,
-solange deine Nutzung als **Non-Production Use** im Sinne der [LICENSE](LICENSE)
-gilt:
+Dieses Projekt ist **proprietär**. Alle Rechte vorbehalten.
 
-- **Erlaubt** (ohne kommerzielle Lizenz):
-  - persönliche, schulische, Forschungs- und Evaluations-Nutzung
-  - Teams bis 5 Personen
-  - Read-only Recherche und Analyse, Mock-Mode für Entwicklung
-  - Eigene Plug-ins entwickeln und testen
-  - **Persönliches Single-User Auto-Trading** mit eigenen Mitteln
-    (siehe Additional Use Grant (B) in [LICENSE](LICENSE))
+Es ist weder Open Source noch Source-Available im Sinne einer
+freien Lizenz. Die Tatsache, dass der Quellcode in einem öffentlichen
+GitHub-Repository sichtbar ist, erteilt **keine Nutzungserlaubnis**.
 
-- **Nicht erlaubt** (braucht separate Lizenz vom Lizenzgeber):
-  - Hosting als Service für Dritte (gegen Bezahlung oder anderweitig)
-  - Trading mit fremden Mitteln / Managed-Accounts
-  - Einbettung in ein verkauftes / lizensiertes / gehostetes Produkt
-  - Multi-User- oder Production-Deployments jeder Art
+- **Erlaubt** (ohne separate Lizenzvereinbarung):
+  - Lesen des Quellcodes zu Evaluationszwecken
+  - Bewertung der Software vor einer Lizenzanfrage
+  - Persönliche Neugier
 
-**Change Date: 2030-01-01.** An diesem Datum konvertiert die Software
-automatisch zur **Apache License 2.0** und wird vollständig Open Source.
+- **Nicht erlaubt** (ohne schriftliche Lizenz vom Lizenzgeber):
+  - Installieren oder Ausführen der Software
+  - Kompilieren, Modifizieren oder Forken
+  - Weitergeben, Mirroring, Embedding in andere Projekte
+  - Reverse Engineering (soweit nicht zwingend gesetzlich erlaubt)
+  - Verwendung der Marken, Logos oder Brand-Assets
+  - Production-Use, kommerzielle Nutzung oder Hosting
 
-**Vor der Nutzung lesen:**
-- [LICENSE](LICENSE) — die Lizenz selbst inkl. "Additional Use Grant"
+Eine kommerzielle Lizenz für die tatsächliche Nutzung wird auf
+Anfrage individuell verhandelt. Kontakt über
+[GitHub Issues](https://github.com/BEKO2210/TAO_2.0/issues).
+
+**Frühere Versionen** dieses Projekts wurden ggf. unter MIT oder
+BUSL-1.1 veröffentlicht. Diese alten Lizenzen gelten weiter für die
+Snapshots, die unter ihnen veröffentlicht wurden. Alle Versionen ab
+dem Lizenzwechsel (siehe Git-Log) sind ausschließlich proprietär.
+
+**Vor jedem Zugriff lesen:**
+- [LICENSE](LICENSE) — die proprietäre Lizenz im Wortlaut
 - [DISCLAIMER.md](DISCLAIMER.md) — Risiko-, Haftungs- und Compliance-Hinweise
 
-> Wenn du irgendeinen Teil dieser Lizenz oder des Disclaimers nicht akzeptierst, **installiere und benutze diese Software nicht.**
+> Wenn du irgendeinen Teil dieser Lizenz nicht akzeptierst, **schließe diese Seite und benutze diese Software nicht.**
 
 ---
 
@@ -90,7 +101,7 @@ automatisch zur **Apache License 2.0** und wird vollständig Open Source.
 | **Scoring** | 10 Personal-Fit-Kriterien plus chain-derived Competition (basierend auf live `tao_in`-Stake, nicht hardcoded Listen). |
 | **Tests** | **547 default tests grün** + **10 Live-Smoke-Tests** gegen echte Endpoints (`pytest -m network`). |
 | **Distribution** | `pip install -e .` mit Console-Script `tao-swarm`. Lokal-only, kein Cloud-Telemetry. Optional Streamlit-Dashboard. |
-| **Lizenz** | BUSL-1.1, Change Date 2030-01-01 → Apache 2.0. |
+| **Lizenz** | Proprietär — All Rights Reserved. Nutzung nur mit separater schriftlicher Lizenz. |
 
 ---
 
@@ -376,8 +387,10 @@ TAO_2.0/
 
 ## Installation
 
-> Mit der Installation akzeptierst du [LICENSE](LICENSE) (BUSL-1.1) und
-> [DISCLAIMER.md](DISCLAIMER.md). **Bitte vorher lesen.**
+> **Hinweis:** Diese Software ist proprietär (siehe [LICENSE](LICENSE)).
+> Die unten aufgeführten Schritte gelten für lizensierte Nutzer und
+> für den Lizenzgeber. Ohne separate Lizenzvereinbarung darfst du die
+> Software nicht installieren oder ausführen — siehe [LICENSE](LICENSE).
 
 ### Voraussetzungen
 
@@ -725,11 +738,9 @@ Die in `RiskSecurityAgent` codierten Bittensor-spezifischen Detektoren basieren 
 
 ## Lizenz
 
-**Business Source License 1.1** — siehe [`LICENSE`](LICENSE) für den
-vollständigen Text inklusive *Additional Use Grant* (Non-Production
-Use frei) und Change Date (2030-01-01 → Apache 2.0).
-
-Production-, kommerzielle oder Hosting-Nutzung erfordert eine separate
+**Proprietär — All Rights Reserved.** Siehe [`LICENSE`](LICENSE) für
+den vollständigen Text. Quellcode-Sichtbarkeit auf GitHub ist keine
+Nutzungserlaubnis. Jede tatsächliche Nutzung erfordert eine separate
 schriftliche Lizenz. Anfragen über GitHub Issues.
 
 ## Beiträge
