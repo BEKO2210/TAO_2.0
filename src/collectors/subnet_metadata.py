@@ -17,6 +17,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from src.collectors._base import BaseCollector
+
 logger = logging.getLogger(__name__)
 
 # Subnet documentation URLs (known mappings)
@@ -41,32 +43,42 @@ _HARDWARE_TEMPLATES = {
 }
 
 
-class SubnetMetadataCollector:
+class SubnetMetadataCollector(BaseCollector):
     """
     Collects and aggregates metadata about Bittensor subnets.
 
-    Sources include GitHub repos, documentation pages, and local inference.
-    All collected data is persisted to SQLite for offline use.
+    Sources include GitHub repos, documentation pages, and local
+    inference. All collected data is persisted to SQLite for offline
+    use. Honours the swarm-wide ``use_mock_data`` flag — callers that
+    want offline determinism set ``use_mock_data=True``.
     """
 
-    def __init__(self, config: dict) -> None:
+    SOURCE_NAME = "subnet_metadata"
+
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the subnet metadata collector.
 
         Args:
             config: Configuration dict with keys:
+                - 'use_mock_data': bool (default True) — fixture mode
                 - 'db_path': SQLite database path
-                - 'request_timeout': HTTP timeout in seconds (default: 15)
+                - 'request_timeout': HTTP timeout in seconds (default 15)
                 - 'github_token': Optional GitHub personal access token
         """
+        config = config or {}
+        config.setdefault("timeout", config.get("request_timeout", 15))
+        super().__init__(config)
         self.config = config
         self.db_path = config.get("db_path", "data/subnet_metadata.db")
-        self.timeout = config.get("request_timeout", 15)
         self.github_token = config.get("github_token", "")
 
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
-        logger.info("SubnetMetadataCollector initialized")
+        logger.info(
+            "SubnetMetadataCollector initialized (use_mock_data=%s)",
+            self.use_mock_data,
+        )
 
     # ── Database ──────────────────────────────────────────────────────────
 

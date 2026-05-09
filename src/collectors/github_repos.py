@@ -16,7 +16,29 @@ from urllib.parse import urlparse
 
 import requests
 
+from src.collectors._base import BaseCollector
+
 logger = logging.getLogger(__name__)
+
+# Stable fixture for offline / use_mock_data=True. Plausible numbers for
+# a healthy public Bittensor-adjacent repository.
+_MOCK_REPO: dict = {
+    "owner": "opentensor",
+    "repo": "bittensor",
+    "name": "opentensor/bittensor",
+    "full_name": "opentensor/bittensor",
+    "description": "Bittensor: a decentralized AI network",
+    "stars": 1100,
+    "forks": 320,
+    "open_issues": 75,
+    "default_branch": "main",
+    "license": "MIT",
+    "is_fork": False,
+    "archived": False,
+    "language": "Python",
+    "updated_at": "2024-06-01T10:00:00Z",
+    "created_at": "2021-01-01T00:00:00Z",
+}
 
 # Suspicious patterns for risk analysis
 _SUSPICIOUS_PATTERNS = [
@@ -35,34 +57,43 @@ _SUSPICIOUS_PATTERNS = [
 _RISK_WEIGHTS = {"LOW": 5, "MEDIUM": 15, "HIGH": 30, "CRITICAL": 50}
 
 
-class GitHubRepoCollector:
+class GitHubRepoCollector(BaseCollector):
     """
     Collects and analyzes GitHub repository metadata.
 
-    Public GitHub API is used - no auth needed for basic rate limits (60/hr).
-    Optional GitHub token increases rate limit to 5000/hr.
+    Public GitHub API is used — no auth needed for basic rate limits
+    (60/hr). Optional GitHub token increases rate limit to 5000/hr.
+    Honours the swarm-wide ``use_mock_data`` flag for offline/test runs.
     """
 
-    def __init__(self, config: dict) -> None:
+    SOURCE_NAME = "github_repos"
+
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the GitHub repository collector.
 
         Args:
             config: Configuration dict with keys:
+                - 'use_mock_data': bool — force fixture data (default True)
                 - 'github_token': Optional personal access token
-                - 'request_timeout': HTTP timeout in seconds (default: 15)
-                - 'cache_ttl': Cache TTL in seconds (default: 3600)
+                - 'request_timeout': HTTP timeout in seconds (default 15)
+                - 'cache_ttl': Cache TTL in seconds (default 3600)
                 - 'db_path': SQLite cache path
         """
+        config = config or {}
+        config.setdefault("cache_ttl", 3600)
+        config.setdefault("timeout", config.get("request_timeout", 15))
+        super().__init__(config)
         self.config = config
         self.token = config.get("github_token", "")
-        self.timeout = config.get("request_timeout", 15)
-        self.cache_ttl = config.get("cache_ttl", 3600)
         self.db_path = config.get("db_path", "data/github_cache.db")
 
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
-        logger.info("GitHubRepoCollector initialized")
+        logger.info(
+            "GitHubRepoCollector initialized (use_mock_data=%s)",
+            self.use_mock_data,
+        )
 
     # ── Database ──────────────────────────────────────────────────────────
 
@@ -145,7 +176,8 @@ class GitHubRepoCollector:
             repo_url: Full GitHub repository URL.
 
         Returns:
-            Dict with stars, forks, open issues, language, activity, etc.
+            Dict with stars, forks, open issues, language, activity,
+            etc., plus a ``_meta`` block tagging mock vs live.
         """
         cached = self._cache_get(f"info:{repo_url}")
         if cached:
@@ -154,6 +186,18 @@ class GitHubRepoCollector:
         owner, repo = self._parse_repo(repo_url)
         if not owner or not repo:
             return {"error": "Invalid GitHub URL", "url": repo_url}
+
+        mode = self._resolve_mode()
+        if mode == "mock":
+            result = {
+                **_MOCK_REPO,
+                "repo_url": repo_url,
+                "owner": owner,
+                "repo_name": repo,
+                "_meta": self._meta(mode),
+            }
+            self._cache_set(f"info:{repo_url}", result)
+            return result
 
         data = self._api_request(f"https://api.github.com/repos/{owner}/{repo}")
         if "error" in data:

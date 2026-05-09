@@ -20,6 +20,8 @@ from typing import Optional
 
 import requests
 
+from src.collectors._base import BaseCollector
+
 logger = logging.getLogger(__name__)
 
 # Subscan API public endpoints (no key needed for basic queries)
@@ -29,34 +31,43 @@ SUBSCAN_API_BASE = "https://bittensor.api.subscan.io/api/v2"
 SS58_PREFIX = 42
 
 
-class WalletWatchOnlyCollector:
+class WalletWatchOnlyCollector(BaseCollector):
     """
     Watch-only wallet collector for Bittensor addresses.
 
-    Monitors balances, transactions, and staking info for public addresses.
-    NEVER stores or requests private keys or seed phrases.
+    Monitors balances, transactions, and staking info for public
+    addresses. NEVER stores or requests private keys or seed phrases.
+    Honours the swarm-wide ``use_mock_data`` flag.
     """
 
-    def __init__(self, config: dict) -> None:
+    SOURCE_NAME = "wallet_watchonly"
+
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the wallet watch-only collector.
 
         Args:
             config: Configuration dict with keys:
+                - 'use_mock_data': bool (default True) — fixture mode
                 - 'db_path': SQLite database path
                 - 'subscan_api_key': Optional Subscan API key
-                - 'request_timeout': HTTP timeout in seconds (default: 15)
-                - 'cache_ttl': Cache TTL in seconds (default: 120)
+                - 'request_timeout': HTTP timeout in seconds (default 15)
+                - 'cache_ttl': Cache TTL in seconds (default 120)
         """
+        config = config or {}
+        config.setdefault("cache_ttl", 120)
+        config.setdefault("timeout", config.get("request_timeout", 15))
+        super().__init__(config)
         self.config = config
         self.db_path = config.get("db_path", "data/wallet_watch.db")
         self.api_key = config.get("subscan_api_key", "")
-        self.timeout = config.get("request_timeout", 15)
-        self.cache_ttl = config.get("cache_ttl", 120)
 
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
-        logger.info("WalletWatchOnlyCollector initialized (watch-only mode)")
+        logger.info(
+            "WalletWatchOnlyCollector initialized (watch-only, use_mock_data=%s)",
+            self.use_mock_data,
+        )
 
     # ── Database ──────────────────────────────────────────────────────────
 

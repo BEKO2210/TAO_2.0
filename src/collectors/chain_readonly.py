@@ -12,7 +12,24 @@ import sqlite3
 import time
 from typing import Any, Optional
 
+from src.collectors._base import BaseCollector
+
 logger = logging.getLogger(__name__)
+
+
+def _try_import_bittensor() -> Any:
+    """
+    Lazily import the optional ``bittensor`` SDK.
+
+    Returns the module or ``None`` if the dep isn't installed. We
+    swallow ImportError silently here — the caller decides whether
+    that's a fall-back-to-mock condition or a hard error.
+    """
+    try:
+        import bittensor as bt  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return bt
 
 # Mock subnet data for offline / development mode
 _MOCK_SUBNETS = [
@@ -123,33 +140,53 @@ _MOCK_SUBNETS = [
 ]
 
 
-class ChainReadOnlyCollector:
+class ChainReadOnlyCollector(BaseCollector):
     """
     Read-only collector for Bittensor chain data.
 
-    Fetches subnet, neuron, emission and metagraph data.
-    All results are cached in a local SQLite database.
-    No write operations are ever performed on the actual chain.
+    Fetches subnet, neuron, emission and metagraph data. Results are
+    cached in a local SQLite database. No write operations are ever
+    performed on the actual chain.
+
+    Mock vs live is chosen via ``use_mock_data`` (the swarm-wide
+    convention). When ``use_mock_data=False`` the collector lazily
+    imports the optional ``bittensor`` SDK and connects to the
+    network specified by ``network`` (``"finney"`` for mainnet,
+    ``"test"`` for testnet). If the SDK isn't installed, the
+    collector falls back to mock mode and tags the payload's
+    ``_meta.fallback_reason`` so callers know.
     """
 
-    def __init__(self, config: dict) -> None:
+    SOURCE_NAME = "chain_readonly"
+
+    def __init__(self, config: dict | None = None) -> None:
         """
         Initialize the chain collector.
 
         Args:
             config: Configuration dictionary with keys:
+                - 'use_mock_data': bool — force mock data (default True)
+                - 'network': 'finney' | 'test' | 'mock' (default 'mock')
                 - 'db_path': Path to SQLite cache database
-                - 'network': 'finney', 'test', or 'mock' (default: 'mock')
-                - 'cache_ttl': Cache time-to-live in seconds (default: 300)
+                - 'cache_ttl': Cache time-to-live in seconds (default 300)
         """
+        config = config or {}
+        super().__init__(config)
         self.config = config
         self.network = config.get("network", "mock")
-        self.cache_ttl = config.get("cache_ttl", 300)
+        # If the caller passed network='mock' explicitly, treat that as
+        # an opt-in to mock data even when use_mock_data wasn't set.
+        if self.network == "mock":
+            self.use_mock_data = True
         self.db_path = config.get("db_path", "data/chain_cache.db")
 
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
-        logger.info("ChainReadOnlyCollector initialized (network=%s)", self.network)
+        self._subtensor: Any = None  # lazily-loaded bittensor.subtensor
+        logger.info(
+            "ChainReadOnlyCollector initialized (network=%s, use_mock_data=%s)",
+            self.network, self.use_mock_data,
+        )
 
     # ── Database ──────────────────────────────────────────────────────────
 
@@ -231,18 +268,54 @@ class ChainReadOnlyCollector:
             logger.debug("Returning cached subnet list")
             return cached["subnets"]
 
-        if self.network == "mock":
+        bt = _try_import_bittensor()
+        mode = self._resolve_mode(
+            live_available=bt is not None,
+            reason_when_unavailable=(
+                "bittensor SDK not installed; install via "
+                "`pip install bittensor` to enable live chain reads"
+            ),
+        )
+
+        if mode == "mock":
             subnets = [dict(s) for s in _MOCK_SUBNETS]
         else:
-            # Placeholder for real Bittensor SDK integration:
-            # import bittensor as bt
-            # sub = bt.subtensor(network=self.network)
-            # subnets = sub.get_subnets()  # type: ignore[attr-defined]
-            subnets = [dict(s) for s in _MOCK_SUBNETS]
+            subnets = self._live_subnet_list(bt)
 
         self._cache_set("subnet_cache", "netuid", -1, {"subnets": subnets})
-        logger.info("Fetched %d subnets", len(subnets))
+        logger.info("Fetched %d subnets (mode=%s)", len(subnets), mode)
         return subnets
+
+    def _live_subnet_list(self, bt: Any) -> list:
+        """
+        Pull subnet identifiers from the live chain via bittensor SDK.
+
+        Uses *only* read methods on ``bt.subtensor``; this collector
+        never instantiates a wallet or signs anything. If a network
+        error occurs, propagate the exception — the caller (CLI / agent)
+        is expected to catch it and fall back gracefully rather than
+        silently masking real chain issues as fake data.
+        """
+        sub = self._get_subtensor(bt)
+        # Different SDK versions expose this differently; try the most
+        # stable read first and fall through to a simpler one.
+        netuids: list[int]
+        if hasattr(sub, "get_subnets"):
+            netuids = list(sub.get_subnets())
+        elif hasattr(sub, "get_all_subnet_netuids"):
+            netuids = list(sub.get_all_subnet_netuids())
+        else:
+            raise RuntimeError(
+                "bittensor.subtensor exposes neither get_subnets() nor "
+                "get_all_subnet_netuids() — incompatible SDK version"
+            )
+        return [{"netuid": int(n), "name": f"subnet_{int(n)}"} for n in netuids]
+
+    def _get_subtensor(self, bt: Any) -> Any:
+        """Return a cached, read-only subtensor for the configured network."""
+        if self._subtensor is None:
+            self._subtensor = bt.subtensor(network=self.network)
+        return self._subtensor
 
     def get_subnet_info(self, netuid: int) -> dict:
         """

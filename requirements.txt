@@ -5,7 +5,12 @@
 # =============================================================================
 
 # --- BITTENSOR SDK ---
-bittensor>=8.0.0,<9.0.0
+# Optional at import time: chain_readonly lazily imports bittensor and falls
+# back to mock data with a clear _meta.fallback_reason if it isn't installed.
+# Keeping it in requirements.txt because the canonical dev install needs it
+# for the live `network=finney` path; pip install -r requirements.txt without
+# this would silently disable live chain reads.
+bittensor>=8.0.0,<11.0.0
 
 # --- ASYNC / HTTP ---
 asyncio>=3.4.3
