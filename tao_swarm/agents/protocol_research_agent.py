@@ -200,16 +200,98 @@ class ProtocolResearchAgent:
         """
         Initialize the ProtocolResearchAgent.
 
-        Args:
-            config: Configuration dictionary
+        Recognised config keys:
+          - ``use_mock_data`` (bool): forwarded to the chain collector.
+            When True (default), the agent's ``live_stats`` section
+            uses the collector's mock fixtures.
+          - ``network`` (str): "finney" / "test" / "mock".
+          - ``chain_collector``: pre-built collector instance (mainly
+            for tests / dependency injection).
+          - ``chain_db_path``: SQLite cache path for the collector
+            (default ``data/chain_cache.db``).
         """
         self.config: dict = config
         self._status: str = "idle"
         self._research_log: list[dict] = []
+        # Lazy chain collector — agent module stays cheap to import
+        # without sqlite + bittensor surface.
+        self._chain_collector: Any = config.get("chain_collector")
         logger.info(
             "ProtocolResearchAgent initialized (knowledge entries=%d)",
             len(self._PROTOCOL_KNOWLEDGE),
         )
+
+    def _get_chain_collector(self) -> Any:
+        """Lazily instantiate the chain collector for live stats."""
+        if self._chain_collector is None:
+            from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
+            self._chain_collector = ChainReadOnlyCollector({
+                "use_mock_data": self.config.get("use_mock_data", True),
+                "network": self.config.get("network", "mock"),
+                "db_path": self.config.get(
+                    "chain_db_path", "data/chain_cache.db",
+                ),
+            })
+        return self._chain_collector
+
+    def _live_protocol_stats(self) -> dict:
+        """
+        Pull current protocol-wide statistics from the chain.
+
+        These are the kind of numbers a "research agent" should
+        actually return: how many subnets exist *right now*, which
+        ones are most economically active, what's the current TAO
+        stake at the protocol level. Falls back gracefully (with a
+        ``_fallback_reason``) when the chain isn't reachable so the
+        rest of the report still composes.
+        """
+        try:
+            collector = self._get_chain_collector()
+            subnets = collector.get_subnet_list()
+        except Exception as exc:
+            logger.warning(
+                "ProtocolResearchAgent: chain stats unavailable (%s)", exc,
+            )
+            return {
+                "subnet_count": None,
+                "_fallback_reason": f"{type(exc).__name__}: {exc}",
+            }
+
+        if not isinstance(subnets, list) or not subnets:
+            return {
+                "subnet_count": 0,
+                "_fallback_reason": "empty subnet list from collector",
+            }
+
+        with_stake = [
+            s for s in subnets if isinstance(s.get("tao_in"), (int, float))
+        ]
+        total_tao_in = sum(float(s.get("tao_in") or 0.0) for s in with_stake)
+        most_staked = sorted(
+            with_stake, key=lambda s: float(s.get("tao_in") or 0.0), reverse=True,
+        )[:5]
+
+        return {
+            "subnet_count": len(subnets),
+            "subnets_with_chain_economics": len(with_stake),
+            "highest_netuid": max(int(s.get("netuid", 0)) for s in subnets),
+            "total_tao_staked_top": round(total_tao_in, 2),
+            "most_staked_subnets": [
+                {
+                    "netuid": int(s.get("netuid", 0)),
+                    "name": str(s.get("name", "?")),
+                    "tao_in": round(float(s.get("tao_in") or 0.0), 2),
+                    "description": (
+                        (s.get("identity") or {}).get("description") or ""
+                    )[:120],
+                }
+                for s in most_staked
+            ],
+            "source": (
+                "chain" if not getattr(collector, "use_mock_data", True)
+                else "chain_mock"
+            ),
+        }
 
     def run(self, task: dict) -> dict:
         """
@@ -234,12 +316,16 @@ class ProtocolResearchAgent:
             notes = self._get_protocol_notes(topic, query)
             glossary = self._get_term_explanations(query)
             risks = self._get_risk_assessment(topic)
+            # Live chain stats turn this from a static-knowledge agent
+            # into one that grounds answers in current chain state.
+            live_stats = self._live_protocol_stats()
 
             result = {
                 "status": "complete",
                 "protocol_notes": notes,
                 "term_explanations": glossary,
                 "risks": risks,
+                "live_stats": live_stats,
                 "topics_available": list(self._PROTOCOL_KNOWLEDGE.keys()),
             }
 
