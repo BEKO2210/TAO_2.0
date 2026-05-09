@@ -39,10 +39,22 @@ def hardware_profile_from_context(agent: Any) -> dict:
     ram = report.get("ram") or {}
     gpu = report.get("gpu") or {}
     cpu = report.get("cpu") or {}
+
+    # Pick the richest compute_cap available across the per-GPU list
+    # (matters for ``training_experiment`` planning, where the most
+    # capable card defines what models can run). Falls back to None if
+    # the field wasn't reported (older nvidia-smi output, or no GPU).
+    gpu_list = gpu.get("gpus") or []
+    compute_caps = [g.get("compute_cap") for g in gpu_list if g.get("compute_cap")]
+    best_compute_cap = max(compute_caps, default=None)
+
     return {
         "ram_gb": ram.get("total_gb", 0),
         "has_gpu": bool(gpu.get("available", False)),
         "vram_gb": gpu.get("vram_gb", 0),
         "cpu_cores": cpu.get("cores", 0),
+        "gpu_count": gpu.get("count", 0),
+        "driver_version": gpu.get("driver_version"),
+        "best_compute_cap": best_compute_cap,
         "_source": "system_check_agent.hardware_report",
     }
