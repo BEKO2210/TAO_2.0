@@ -240,13 +240,15 @@ img.brand-mark { background: transparent; }
 
 .hero-logo {
   display: block;
-  width: clamp(72px, 12vw, 92px);
-  height: clamp(72px, 12vw, 92px);
-  margin: 0 auto 24px;
+  /* Bigger and more present. On phones the lower bound dominates;
+   * on desktop the upper bound; tablet sizes interpolate via vw. */
+  width: clamp(112px, 22vw, 152px);
+  height: clamp(112px, 22vw, 152px);
+  margin: 0 auto 28px;
   object-fit: contain;
   filter:
-    drop-shadow(0 12px 32px rgba(125, 211, 252, 0.35))
-    drop-shadow(0 6px 16px rgba(167, 139, 250, 0.25));
+    drop-shadow(0 16px 40px rgba(125, 211, 252, 0.40))
+    drop-shadow(0 8px 20px rgba(167, 139, 250, 0.28));
   animation: hero-logo-float 6s ease-in-out infinite;
 }
 @keyframes hero-logo-float {
@@ -722,8 +724,15 @@ h2 {
 /* Mobile — symmetric centered, tighter, no horizontal scroll */
 @media (max-width: 880px) {
   .nav-inner { padding: 12px var(--pad); }
-  .nav nav { gap: 14px; }
-  .nav nav a:not(.cta):not(.lang) { display: none; }
+  .nav nav { gap: 12px; }
+  /* Only hide DIRECT anchor children of <nav> (the section links).
+   * The previous selector ``a:not(.cta):not(.lang)`` matched every
+   * descendant <a>, including the EN/DE switcher anchors inside
+   * ``<span class="lang">``, which made the language toggle vanish
+   * on mobile. ``> a`` restricts the rule to top-level nav links. */
+  .nav nav > a:not(.cta) { display: none; }
+  /* Lang switcher must always show, including on mobile. */
+  .nav nav .lang { display: inline-flex; }
 
   .hero {
     min-height: 0;
