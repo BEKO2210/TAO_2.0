@@ -372,3 +372,186 @@ def test_summary_as_dict_returns_plain_lists(tmp_path):
     assert d["skipped"] == []
     assert d["errors"] == []
     assert isinstance(summary, PluginLoadSummary)
+
+
+# ---------------------------------------------------------------------------
+# Hardening — duplicate file stem across paths
+# ---------------------------------------------------------------------------
+
+def test_same_filename_in_two_dirs_does_not_collide(tmp_path):
+    """Two plug-ins with the same filename in different directories
+    must both load. The path-based loader hashes the parent dir into
+    the synthetic module name so they don't displace each other in
+    ``sys.modules``.
+    """
+    dir_a = tmp_path / "plugins_a"
+    dir_b = tmp_path / "plugins_b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+
+    # Same filename, different AGENT_NAMEs and class names.
+    _write_plugin(dir_a, "shared_agent.py", "shared_a_agent", "SharedAAgent")
+    _write_plugin(dir_b, "shared_agent.py", "shared_b_agent", "SharedBAgent")
+
+    orch = SwarmOrchestrator({"use_mock_data": True})
+    summary = load_plugins(orch, paths=[dir_a, dir_b], entry_point_group=None)
+
+    assert "shared_a_agent" in summary.loaded
+    assert "shared_b_agent" in summary.loaded
+    assert summary.errors == []
+    # And they're really separate instances under separate names.
+    assert orch.agents["shared_a_agent"] is not orch.agents["shared_b_agent"]
+
+
+# ---------------------------------------------------------------------------
+# Hardening — __init__ raises through both arity paths
+# ---------------------------------------------------------------------------
+
+def test_init_raising_for_both_arities_recorded_as_error(tmp_path):
+    """If a plug-in's ``__init__`` raises both with config and as a
+    bare zero-arg fallback, the loader must record an error and not
+    register the agent."""
+    src = '''
+AGENT_NAME = "broken_init_agent"
+AGENT_VERSION = "0.1.0"
+
+class BrokenInitAgent:
+    def __init__(self, config=None):
+        raise RuntimeError("simulated init failure")
+
+    def run(self, task): return {"status": "complete"}
+    def get_status(self): return {"state": "idle"}
+    def validate_input(self, task): return True, ""
+'''
+    (tmp_path / "broken_init_agent.py").write_text(src)
+
+    orch = SwarmOrchestrator({"use_mock_data": True})
+    summary = load_plugins(orch, paths=[tmp_path], entry_point_group=None)
+
+    assert "broken_init_agent" not in summary.loaded
+    assert "broken_init_agent" not in orch.agents
+    assert any(
+        "instantiation failed" in e["reason"] and "simulated init failure" in e["reason"]
+        for e in summary.errors
+    )
+
+
+# ---------------------------------------------------------------------------
+# Hardening — plug-in run() that raises must not crash the orchestrator
+# ---------------------------------------------------------------------------
+
+def test_plugin_run_raising_is_wrapped_by_orchestrator(tmp_path):
+    """Even when a plug-in's ``run()`` violates the SPEC.md contract
+    by raising, ``execute_task`` must wrap the exception into a
+    standard error result instead of letting it escape.
+
+    Plug-ins don't auto-register task types with the router, so we
+    replace an existing built-in (``system_check_agent``) so the
+    router still resolves the well-known ``system_check`` task type
+    — straight onto the plug-in whose ``run()`` raises.
+    """
+    src = '''
+AGENT_NAME = "system_check_agent"
+AGENT_VERSION = "0.1.0"
+
+class SystemCheckAgent:
+    def __init__(self, config=None): self.config = config or {}
+    def run(self, task):
+        raise RuntimeError("plug-in run() exploded")
+    def get_status(self): return {"state": "idle"}
+    def validate_input(self, task):
+        if "type" not in task:
+            return False, "task type required"
+        return True, ""
+'''
+    (tmp_path / "system_check_agent.py").write_text(src)
+
+    orch = SwarmOrchestrator({"use_mock_data": True})
+    load_plugins(
+        orch, paths=[tmp_path], entry_point_group=None,
+        on_conflict=ON_CONFLICT_REPLACE,
+    )
+
+    out = orch.execute_task({"type": "system_check"})
+    assert out["status"] == "error"
+    assert "plug-in run() exploded" in out["error"]
+    # And the orchestrator did not propagate the raw exception.
+    assert out.get("executed") is False
+
+
+# ---------------------------------------------------------------------------
+# Hardening — AGENT_NAME shape validation
+# ---------------------------------------------------------------------------
+
+def test_non_string_agent_name_is_skipped(tmp_path):
+    """``AGENT_NAME`` must be a string. A numeric (or any non-str)
+    value is rejected with a structured skip reason."""
+    src = '''
+AGENT_NAME = 42
+AGENT_VERSION = "0.1.0"
+
+class NumericNameAgent:
+    def __init__(self, config=None): self.config = config or {}
+    def run(self, task): return {"status": "complete"}
+    def get_status(self): return {"state": "idle"}
+    def validate_input(self, task): return True, ""
+'''
+    (tmp_path / "numeric_name_agent.py").write_text(src)
+
+    orch = SwarmOrchestrator({"use_mock_data": True})
+    summary = load_plugins(orch, paths=[tmp_path], entry_point_group=None)
+
+    assert summary.loaded == []
+    assert 42 not in orch.agents
+    assert any("AGENT_NAME must be str" in s["reason"] for s in summary.skipped)
+
+
+def test_whitespace_padded_agent_name_is_skipped(tmp_path):
+    """Whitespace-only or padded ``AGENT_NAME`` is a footgun (collides
+    awkwardly in lookups, prints weirdly in logs). Reject it."""
+    src = '''
+AGENT_NAME = "   "
+AGENT_VERSION = "0.1.0"
+
+class BlankNameAgent:
+    def __init__(self, config=None): self.config = config or {}
+    def run(self, task): return {"status": "complete"}
+    def get_status(self): return {"state": "idle"}
+    def validate_input(self, task): return True, ""
+'''
+    (tmp_path / "blank_name_agent.py").write_text(src)
+
+    orch = SwarmOrchestrator({"use_mock_data": True})
+    summary = load_plugins(orch, paths=[tmp_path], entry_point_group=None)
+
+    assert summary.loaded == []
+    assert any(
+        "AGENT_NAME must be non-empty" in s["reason"]
+        for s in summary.skipped
+    )
+
+
+def test_padded_agent_name_is_skipped(tmp_path):
+    """Same shape rule applies to leading/trailing whitespace."""
+    src = '''
+AGENT_NAME = "  padded_agent  "
+AGENT_VERSION = "0.1.0"
+
+class PaddedNameAgent:
+    def __init__(self, config=None): self.config = config or {}
+    def run(self, task): return {"status": "complete"}
+    def get_status(self): return {"state": "idle"}
+    def validate_input(self, task): return True, ""
+'''
+    (tmp_path / "padded_name_agent.py").write_text(src)
+
+    orch = SwarmOrchestrator({"use_mock_data": True})
+    summary = load_plugins(orch, paths=[tmp_path], entry_point_group=None)
+
+    assert summary.loaded == []
+    assert "  padded_agent  " not in orch.agents
+    assert "padded_agent" not in orch.agents
+    assert any(
+        "AGENT_NAME must be non-empty" in s["reason"]
+        for s in summary.skipped
+    )
