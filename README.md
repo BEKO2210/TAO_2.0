@@ -211,7 +211,7 @@ dem Lizenzwechsel (siehe Git-Log) sind ausschließlich proprietär.
 
 | Bereich | Stand |
 |---|---|
-| **Agenten** | 15 deterministische Python-Agenten (kein LLM intern). 5 davon konsumieren Live-Chain-/Marktdaten; die restlichen sind absichtlich Template-Emitter. Plus benutzerdefinierte **Plug-ins** aus deinem eigenen Repo. |
+| **Agenten** | 15 deterministische Python-Agenten (kein LLM intern). **Jeder Agent hat eine echte Datenquelle** — entweder ein Live-Collector (chain / wallet / market) oder ein Upstream-Pull über den AgentContext-Bus (z.B. `miner_engineering_agent` liest `system_check_agent.hardware_report` + Top-Subnet aus `subnet_scoring_agent`). Lineage ist als Vertrag in `tests/test_agent_data_lineage.py` durchgesetzt; siehe [`docs/agent_lineage.md`](docs/agent_lineage.md). Plus eigene **Plug-ins** aus deinem Repo. |
 | **Orchestrator** | Zentraler `SwarmOrchestrator` mit ApprovalGate (gate-before-route), TaskRouter, AgentContext-Bus, optionaler paralleler Task-Ausführung. |
 | **Chain-Daten** | Echtes Bittensor SDK 10.x (`SubtensorApi`) — auf Mainnet finney verifiziert: 129 Subnets, rich `DynamicInfo` mit owner / identity / github_repo / TAO_in / volume. Per-Network-Cache. `BT_READ_ONLY=1` als Default. |
 | **Live-Pfade** | Mainnet finney (Bittensor SDK), Subscan (Wallet), CoinGecko (Markt), GitHub (Repo-Metadata) — alle mit graceful Fallback und `_meta.fallback_reason`-Tagging. |

@@ -69,6 +69,22 @@ class TrainingExperimentAgent:
 
         logger.info("TrainingExperimentAgent: action=%s", action)
 
+        # Training plan should size against the operator's actual
+        # hardware AND match the miner-engineering plan if one was
+        # produced earlier in the run.
+        upstream_seen: list[str] = []
+        ctx = getattr(self, "context", None)
+        if ctx is not None:
+            if "hardware" not in params:
+                hw = ctx.get("system_check_agent.hardware_report")
+                if isinstance(hw, dict):
+                    params["hardware"] = hw
+                    upstream_seen.append("system_check_agent")
+            miner = ctx.get("miner_engineering_agent")
+            if isinstance(miner, dict):
+                params["miner_plan"] = miner
+                upstream_seen.append("miner_engineering_agent")
+
         try:
             if action == "plan":
                 result = self._create_training_plan(params)
@@ -88,6 +104,7 @@ class TrainingExperimentAgent:
                 "timestamp": time.time(),
                 "action": action,
             })
+            result.setdefault("_meta", {})["upstream_seen"] = list(upstream_seen)
             self._status = "complete"
             return result
 
