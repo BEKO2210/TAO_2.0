@@ -65,6 +65,17 @@ class InfraDevopsAgent:
 
         logger.info("InfraDevopsAgent: action=%s", action)
 
+        # Pull hardware so the deployment artefacts (Dockerfile,
+        # compose limits, cron schedules) are sized to the actual
+        # machine instead of guessed.
+        upstream_seen: list[str] = []
+        ctx = getattr(self, "context", None)
+        if ctx is not None and "hardware" not in params:
+            hw = ctx.get("system_check_agent.hardware_report")
+            if isinstance(hw, dict):
+                params["hardware"] = hw
+                upstream_seen.append("system_check_agent")
+
         try:
             if action == "structure":
                 result = self._generate_structure(params)
@@ -86,6 +97,7 @@ class InfraDevopsAgent:
                 "timestamp": time.time(),
                 "action": action,
             })
+            result.setdefault("_meta", {})["upstream_seen"] = list(upstream_seen)
             self._status = "complete"
             return result
 

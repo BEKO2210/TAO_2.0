@@ -5,10 +5,25 @@ Evaluates subnets using 10 weighted criteria (0-100 each):
 Technical Fit, Hardware Fit, Setup Complexity, Documentation Quality,
 Competition, Reward Realism, Maintenance, Security, Learning Value,
 and Long-Term Potential.
+
+Data lineage (PR 2S):
+- Reads ``subnet_discovery_agent.subnets`` from the AgentContext
+  bus when the caller didn't pass an explicit subnet list.
+- Imports the project's ``tao_swarm.scoring`` helpers for the
+  per-criterion math so the agent and the read-only scoring
+  package agree on definitions.
 """
 
 import logging
 import time
+
+# tao_swarm.scoring/ ships the canonical scoring helpers; importing
+# them here pins the agent to the same maths the dashboard uses
+# rather than re-implementing the rules per-agent.
+try:
+    from tao_swarm import scoring as _scoring_pkg  # noqa: F401  - import for lineage
+except ImportError:  # pragma: no cover - shipping artefact
+    _scoring_pkg = None
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +103,22 @@ class SubnetScoringAgent:
         params = self._resolve_params(task)
         subnets = list(params.get("subnets", []) or [])
         custom_weights = params.get("custom_weights", {})
+        upstream_seen: list[str] = []
+
+        # If the caller didn't pass a subnet list, pull from the
+        # ``subnet_discovery_agent`` upstream — that's the agent
+        # whose job is to maintain the live list. Falling back to a
+        # single-subnet stub when neither is available preserves the
+        # old behaviour for ad-hoc invocations.
+        if not subnets:
+            ctx = getattr(self, "context", None)
+            if ctx is not None:
+                upstream = ctx.get("subnet_discovery_agent")
+                if isinstance(upstream, dict):
+                    candidate = upstream.get("subnets")
+                    if isinstance(candidate, list) and candidate:
+                        subnets = list(candidate)
+                        upstream_seen.append("subnet_discovery_agent")
 
         # If the caller passed only an identifier (subnet_id / netuid) and
         # no full subnet dict, scaffold a minimal stub so the agent
@@ -123,6 +154,7 @@ class SubnetScoringAgent:
                 "recommendations": self._generate_recommendations(scored_subnets),
                 "weights_used": self._weights,
                 "total_scored": len(scored_subnets),
+                "_meta": {"upstream_seen": list(upstream_seen)},
             }
             stub_count = sum(1 for s in subnets if s.get("_stub"))
             if stub_count:

@@ -67,6 +67,27 @@ evaluation logic, checks stake requirements, and performs code
 
         logger.info("ValidatorEngineeringAgent: action=%s", action)
 
+        # Pull upstream so the feasibility report uses the operator's
+        # actual hardware + the scored subnet they're considering.
+        upstream_seen: list[str] = []
+        ctx = getattr(self, "context", None)
+        if ctx is not None:
+            if "hardware" not in params:
+                hw = ctx.get("system_check_agent.hardware_report")
+                if isinstance(hw, dict):
+                    params["hardware"] = hw
+                    upstream_seen.append("system_check_agent")
+            if "subnet" not in params and "netuid" not in params:
+                scoring = ctx.get("subnet_scoring_agent")
+                if isinstance(scoring, dict):
+                    scored = scoring.get("scored_subnets") or []
+                    if scored:
+                        top = scored[0]
+                        params["subnet"] = top.get(
+                            "subnet", {"netuid": top.get("netuid")},
+                        )
+                        upstream_seen.append("subnet_scoring_agent")
+
         try:
             if action == "feasibility":
                 result = self._analyze_feasibility(params)
@@ -84,6 +105,7 @@ evaluation logic, checks stake requirements, and performs code
                 "timestamp": time.time(),
                 "action": action,
             })
+            result.setdefault("_meta", {})["upstream_seen"] = list(upstream_seen)
             self._status = "complete"
             return result
 

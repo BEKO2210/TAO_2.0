@@ -67,6 +67,29 @@ class MinerEngineeringAgent:
 
         logger.info("MinerEngineeringAgent: action=%s", action)
 
+        # Pull upstream so the plan reflects the operator's actual
+        # hardware AND the subnet the swarm has scored highest. If
+        # the caller already passed a ``subnet`` and ``hardware``
+        # explicitly, those win.
+        upstream_seen: list[str] = []
+        ctx = getattr(self, "context", None)
+        if ctx is not None:
+            if "hardware" not in params:
+                hw = ctx.get("system_check_agent.hardware_report")
+                if isinstance(hw, dict):
+                    params["hardware"] = hw
+                    upstream_seen.append("system_check_agent")
+            if "subnet" not in params and "netuid" not in params:
+                scoring = ctx.get("subnet_scoring_agent")
+                if isinstance(scoring, dict):
+                    scored = scoring.get("scored_subnets") or []
+                    if scored:
+                        top = scored[0]
+                        params["subnet"] = top.get(
+                            "subnet", {"netuid": top.get("netuid")},
+                        )
+                        upstream_seen.append("subnet_scoring_agent")
+
         try:
             if action == "analyze":
                 result = self._analyze_subnet(params)
@@ -86,6 +109,7 @@ class MinerEngineeringAgent:
                 "timestamp": time.time(),
                 "action": action,
             })
+            result.setdefault("_meta", {})["upstream_seen"] = list(upstream_seen)
             self._status = "complete"
             return result
 

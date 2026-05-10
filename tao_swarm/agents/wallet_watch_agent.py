@@ -534,28 +534,41 @@ class WalletWatchAgent:
 
     def _fetch_real_balance(self, address: str) -> dict:
         """
-        Fetch real balance from the Bittensor chain.
+        Fetch real balance via the project's read-only wallet collector.
 
-        Args:
-            address: Wallet address
-
-        Returns:
-            Balance data
+        Delegates to :class:`tao_swarm.collectors.wallet_watchonly.WalletWatchOnlyCollector`
+        rather than re-implementing the Bittensor / Subscan plumbing
+        — that collector already handles caching, fallback to mock,
+        and the ``_meta.fallback_reason`` audit field. Lazy-imports
+        so paper-only environments without ``bittensor`` installed
+        still load this agent module.
         """
         try:
-            import bittensor as bt
-            subtensor = bt.subtensor()
-            balance = subtensor.get_balance(address)
-            return {
-                "balance_tao": float(balance),
-                "balance_rao": int(float(balance) * 1e9),
-                "source": "chain",
-            }
-        except ImportError:
-            logger.warning("bittensor not installed, falling back to mock")
+            from tao_swarm.collectors.wallet_watchonly import (
+                WalletWatchOnlyCollector,
+            )
+        except ImportError as exc:  # pragma: no cover - import guard
+            logger.warning("wallet_watchonly collector unavailable: %s", exc)
             return self._get_mock_balance(address)
-        except Exception as e:
-            logger.error("Failed to fetch balance: %s", e)
+
+        try:
+            collector = WalletWatchOnlyCollector(config={
+                "use_mock_data": False,
+                "network": self.config.get("network", "finney"),
+            })
+            data = collector.get_balance(address)
+            return {
+                "balance_tao": float(data.get("balance_tao", 0.0)),
+                "balance_rao": int(data.get("balance_rao", 0)),
+                "source": data.get("_meta", {}).get("source", "chain"),
+                "fallback_reason": data.get("_meta", {}).get(
+                    "fallback_reason"
+                ),
+            }
+        except Exception as exc:
+            logger.warning(
+                "WalletWatchOnlyCollector.get_balance failed: %s", exc,
+            )
             return self._get_mock_balance(address)
 
     def _get_staking_info(self, address: str) -> dict:

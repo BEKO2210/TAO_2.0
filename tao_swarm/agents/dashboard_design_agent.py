@@ -118,6 +118,19 @@ class DashboardDesignAgent:
 
         logger.info("DashboardDesignAgent: action=%s", action)
 
+        # Pull subnet-scoring upstream so the dashboard layout
+        # references the actual top subnets the swarm has scored —
+        # generic 'subnet 1' panels are useless to the operator.
+        upstream_seen: list[str] = []
+        ctx = getattr(self, "context", None)
+        if ctx is not None and "scored_subnets" not in params:
+            scoring = ctx.get("subnet_scoring_agent")
+            if isinstance(scoring, dict):
+                scored = scoring.get("scored_subnets") or []
+                if scored:
+                    params["scored_subnets"] = scored[:5]
+                    upstream_seen.append("subnet_scoring_agent")
+
         try:
             if action == "spec":
                 result = self._generate_full_spec(params)
@@ -131,6 +144,7 @@ class DashboardDesignAgent:
                     "error": f"Unknown action: {action}",
                 }
 
+            result.setdefault("_meta", {})["upstream_seen"] = list(upstream_seen)
             self._status = "complete"
             return result
 

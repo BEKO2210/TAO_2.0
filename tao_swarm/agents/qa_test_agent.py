@@ -183,6 +183,18 @@ class QATestAgent:
 
         logger.info("QATestAgent: action=%s", action)
 
+        # Pull system_check_agent's report so the QA scope can be
+        # tightened to the subset of services the operator's machine
+        # can actually run (e.g. skip GPU-only checks if there's no
+        # CUDA). Stays read-only — purely informative for now.
+        upstream_seen: list[str] = []
+        ctx = getattr(self, "context", None)
+        if ctx is not None:
+            hw = ctx.get("system_check_agent.hardware_report")
+            if isinstance(hw, dict):
+                params["hardware"] = hw
+                upstream_seen.append("system_check_agent")
+
         try:
             if action == "test":
                 result = self._run_tests(params)
@@ -203,6 +215,7 @@ class QATestAgent:
                 "action": action,
                 "findings": result.get("findings_count", 0),
             })
+            result.setdefault("_meta", {})["upstream_seen"] = list(upstream_seen)
             self._status = "complete"
             return result
 

@@ -90,6 +90,24 @@ class MarketTradeAgent:
 
         logger.info("MarketTradeAgent: action=%s, symbol=%s", action, symbol)
 
+        # Pull upstream subnet-scoring output so the market view can
+        # explicitly call out the top-scored subnets the operator is
+        # already watching, instead of producing a generic "TAO went
+        # up" report.
+        upstream_seen: list[str] = []
+        scoring_top: list[dict] = []
+        ctx = getattr(self, "context", None)
+        if ctx is not None:
+            scoring = ctx.get("subnet_scoring_agent")
+            if isinstance(scoring, dict):
+                top = scoring.get("scored_subnets") or []
+                if isinstance(top, list):
+                    scoring_top = top[:5]
+                    if scoring_top:
+                        upstream_seen.append("subnet_scoring_agent")
+        # Stash for sub-handlers to consume.
+        params["_upstream_top_subnets"] = scoring_top
+
         try:
             if action == "analyze":
                 result = self._analyze_market(params)
@@ -110,6 +128,23 @@ class MarketTradeAgent:
                 "action": action,
                 "symbol": symbol,
             })
+            # Surface the upstream-context-pull result so the
+            # operator can tell whether this report was conditioned
+            # on subnet scoring or stand-alone.
+            meta = result.setdefault("_meta", {})
+            meta["upstream_seen"] = list(upstream_seen)
+            if scoring_top:
+                result.setdefault(
+                    "subnet_focus",
+                    [
+                        {
+                            "netuid": s.get("netuid"),
+                            "name": s.get("name"),
+                            "final_score": s.get("final_score"),
+                        }
+                        for s in scoring_top
+                    ],
+                )
             self._status = "complete"
             return result
 

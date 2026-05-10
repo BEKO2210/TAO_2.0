@@ -67,6 +67,20 @@ class FullstackDevAgent:
 
         logger.info("FullstackDevAgent: action=%s", action)
 
+        # If the operator already ran subnet-scoring, use the top-
+        # scored subnet as the focus of the dev plan. The CLI / UI
+        # mock-ups then talk about the actual subnet under
+        # consideration instead of an abstract "subnet 1".
+        upstream_seen: list[str] = []
+        ctx = getattr(self, "context", None)
+        if ctx is not None and "focus_subnet" not in params:
+            scoring = ctx.get("subnet_scoring_agent")
+            if isinstance(scoring, dict):
+                scored = scoring.get("scored_subnets") or []
+                if scored:
+                    params["focus_subnet"] = scored[0]
+                    upstream_seen.append("subnet_scoring_agent")
+
         try:
             if action == "plan":
                 result = self._create_dev_plan(params)
@@ -88,6 +102,7 @@ class FullstackDevAgent:
                 "timestamp": time.time(),
                 "action": action,
             })
+            result.setdefault("_meta", {})["upstream_seen"] = list(upstream_seen)
             self._status = "complete"
             return result
 
