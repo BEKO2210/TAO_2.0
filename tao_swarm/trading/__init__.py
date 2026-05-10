@@ -45,6 +45,14 @@ Public surface
 from __future__ import annotations
 
 from tao_swarm.trading.backtest import Backtester, BacktestResult
+from tao_swarm.trading.brain import (
+    DEFAULT_WEIGHTS as BRAIN_DEFAULT_WEIGHTS,
+)
+from tao_swarm.trading.brain import (
+    AgentSignal,
+    BrainDecision,
+    TradingBrain,
+)
 from tao_swarm.trading.executor import ExecResult, Executor
 from tao_swarm.trading.guards import (
     DailyLossLimit,
@@ -105,8 +113,12 @@ __all__ = [
     "LIVE_TRADING_MAGIC_VALUE",
     "SUPPORTED_ACTIONS",
     "AuthorizationError",
+    "AgentSignal",
+    "BRAIN_DEFAULT_WEIGHTS",
     "BacktestResult",
     "Backtester",
+    "BrainDecision",
+    "TradingBrain",
     "BittensorChainPositionReader",
     "BittensorSigner",
     "BroadcastError",
