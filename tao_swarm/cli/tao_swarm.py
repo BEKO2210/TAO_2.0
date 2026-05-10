@@ -1878,6 +1878,120 @@ def trade_learning_report(
         click.echo()
 
 
+@trade.command("brain")
+@click.option(
+    "--task",
+    type=str,
+    default="general_review",
+    show_default=True,
+    help=(
+        "Orchestrator task to run before sampling the brain. The "
+        "brain reads agent outputs from AgentContext, so the swarm "
+        "needs to have run first."
+    ),
+)
+@click.option(
+    "--json", "json_output", is_flag=True,
+    help="Print machine-readable JSON instead of a table.",
+)
+@click.pass_context
+def trade_brain(ctx, task, json_output):
+    """Show the unified TradingBrain decision: per-agent signals + aggregate.
+
+    The brain pulls each of the 15 agents' specialty signal from the
+    orchestrator's AgentContext bus, weights them, and produces one
+    'bullish / bearish / neutral / halt' decision. Veto layer gives
+    risk_security and qa_test the ability to halt trading on their
+    own.
+
+    This command is read-only: it runs the full swarm (so the agents
+    publish their reports), then samples the brain. No trades are
+    proposed or executed.
+    """
+    import json as _json
+
+    from tao_swarm.orchestrator import SwarmOrchestrator
+    from tao_swarm.trading import TradingBrain
+
+    config = ctx.obj["config"]
+    click.echo(_mode_banner(config))
+
+    orch = SwarmOrchestrator(config)
+    # Run the requested task to populate AgentContext.
+    try:
+        orch.execute_task({"type": task})
+    except Exception as exc:
+        click.echo(click.style(
+            f"  orchestrator.execute_task failed: {exc}", fg="red",
+        ))
+        ctx.exit(2)
+        return
+
+    brain = TradingBrain(orch.context)
+    decision = brain.aggregate()
+
+    if json_output:
+        click.echo(_json.dumps(decision.as_dict(), indent=2))
+        return
+
+    # ---- pretty render ----
+    colors = {
+        "bullish": "green",
+        "bearish": "red",
+        "neutral": "yellow",
+        "halt":    "red",
+    }
+    direction_colors = {
+        "bullish": "green",
+        "bearish": "red",
+        "neutral": "yellow",
+        "veto":    "red",
+    }
+    click.echo(click.style(
+        "\n  TradingBrain — expert-team aggregate", fg="blue", bold=True,
+    ))
+    click.echo()
+    color = colors.get(decision.decision, "white")
+    score_str = f"{decision.score:.4f}" if decision.score is not None else "—"
+    click.echo(click.style(
+        f"  Decision: {decision.decision.upper():<8s}  score={score_str}",
+        fg=color, bold=True,
+    ))
+    click.echo(f"  Reason:   {decision.reason}")
+    click.echo()
+
+    if not decision.signals:
+        click.echo("  (no agents have published yet)")
+        click.echo()
+        return
+
+    header = (
+        f"    {'agent':30s}  {'dir':>8s}  {'score':>6s}  "
+        f"{'conf':>5s}  {'weight':>6s}  evidence"
+    )
+    click.echo(header)
+    click.echo(
+        f"    {'-' * 30}  {'-' * 8}  {'-' * 6}  {'-' * 5}  {'-' * 6}  ----"
+    )
+    for sig in sorted(decision.signals, key=lambda s: -s.score):
+        w = decision.weights.get(sig.name, 1.0)
+        dcol = direction_colors.get(sig.direction, "white")
+        dir_styled = click.style(f"{sig.direction:>8s}", fg=dcol)
+        click.echo(
+            f"    {sig.name[:30]:30s}  {dir_styled}  "
+            f"{sig.score:>6.3f}  {sig.confidence:>5.2f}  {w:>6.2f}  "
+            f"{sig.evidence[:60]}"
+        )
+
+    click.echo()
+    click.echo(click.style(
+        "  Tip: rebalance weights via tao_swarm.trading.BRAIN_DEFAULT_WEIGHTS "
+        "to bias the brain.",
+        fg="cyan",
+    ))
+    click.echo()
+
+
 # ── Entry point ───────────────────────────────────────────────────────────
 
 def main_entry():
