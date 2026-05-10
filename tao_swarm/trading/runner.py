@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from tao_swarm.trading.council import CouncilDecision, TradingCouncil
 from tao_swarm.trading.executor import ExecResult, Executor
 from tao_swarm.trading.reconcile import (
     ChainPositionReader,
@@ -86,6 +87,10 @@ class RunnerStatus:
     halted_reason: str | None
     last_reconcile_ts: float | None = None
     reconciled_total_tao: float | None = None
+    council_enabled: bool = False
+    council_skipped_ticks: int = 0
+    last_council_decision: dict[str, Any] | None = None
+    last_council_skip_ts: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -106,6 +111,14 @@ class RunnerStatus:
             "halted_reason": self.halted_reason,
             "last_reconcile_ts": self.last_reconcile_ts,
             "reconciled_total_tao": self.reconciled_total_tao,
+            "council_enabled": self.council_enabled,
+            "council_skipped_ticks": self.council_skipped_ticks,
+            "last_council_decision": (
+                dict(self.last_council_decision)
+                if self.last_council_decision is not None
+                else None
+            ),
+            "last_council_skip_ts": self.last_council_skip_ts,
         }
 
 
@@ -201,6 +214,17 @@ class TradingRunner:
             :func:`time.time`.
         sleep: Injectable sleep so ``run_forever()`` can be unit-
             tested. Defaults to :func:`time.sleep`.
+        council: Optional :class:`TradingCouncil` consulted as a
+            pre-tick check. If wired, every tick first calls
+            ``council.aggregate()``; when the decision is ``"halt"``
+            the runner skips ``strategy.evaluate`` and
+            executor dispatch entirely (no proposals, no executions),
+            records the decision under ``status.last_council_decision``
+            and increments ``status.council_skipped_ticks``. The
+            runner is NOT permanently halted — the next tick re-asks
+            the council so a transient veto (e.g. risk_security
+            DANGER that later clears) doesn't require an operator
+            ``reset()``. Defaults to ``None`` (council not consulted).
     """
 
     HALTED_REASON_CIRCUIT = "circuit breaker tripped after consecutive errors"
@@ -221,6 +245,7 @@ class TradingRunner:
         reconcile_coldkey_ss58: str | None = None,
         auto_reconcile: bool = True,
         status_file: str | Path | None = None,
+        council: TradingCouncil | None = None,
     ) -> None:
         if tick_interval_s <= 0:
             raise ValueError("tick_interval_s must be > 0")
@@ -245,6 +270,10 @@ class TradingRunner:
         self._auto_reconcile = bool(auto_reconcile) and chain_reader is not None
         self._reconciled_once = False
         self._status_file = Path(status_file) if status_file else None
+        self._council = council
+        self._council_skipped_ticks = 0
+        self._last_council_decision: dict[str, Any] | None = None
+        self._last_council_skip_ts: float | None = None
 
         self._positions: dict[int, _Position] = {}
         self._ticks = 0
@@ -304,6 +333,14 @@ class TradingRunner:
                 halted_reason=self._halted_reason,
                 last_reconcile_ts=self._last_reconcile_ts,
                 reconciled_total_tao=self._reconciled_total_tao,
+                council_enabled=self._council is not None,
+                council_skipped_ticks=self._council_skipped_ticks,
+                last_council_decision=(
+                    dict(self._last_council_decision)
+                    if self._last_council_decision is not None
+                    else None
+                ),
+                last_council_skip_ts=self._last_council_skip_ts,
             )
 
     def reconcile(self) -> dict[int, float]:
@@ -418,6 +455,16 @@ class TradingRunner:
                             "trade without verified on-chain position book"
                         )
                         self._stop_event.set()
+                return []
+
+        # Pre-tick council check. If a council was wired and it returns
+        # "halt" (high-confidence VETO from risk_security or qa_test, see
+        # docs/trading_council.md), skip strategy + executor entirely
+        # for this tick. We do NOT permanently halt the runner — the
+        # next tick re-asks the council so a transient veto (e.g. a
+        # DANGER text that later clears) doesn't require operator reset.
+        if self._council is not None:
+            if self._council_halts_tick():
                 return []
 
         try:
@@ -563,6 +610,41 @@ class TradingRunner:
                 "TradingRunner status-file dump failed (%s): %s",
                 self._status_file, exc,
             )
+
+    def _council_halts_tick(self) -> bool:
+        """Consult the council; return True iff this tick must be skipped.
+
+        Defensive: a council ``aggregate()`` that raises is treated as a
+        non-halt (the council is advisory; it must not break the
+        runner loop). The exception is logged and recorded as a runner
+        error so the operator notices.
+        """
+        if self._council is None:
+            return False
+        try:
+            decision: CouncilDecision = self._council.aggregate()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("TradingCouncil.aggregate() raised: %s", exc)
+            self._record_error(f"council.aggregate raised: {exc!r}")
+            return False
+
+        with self._lock:
+            self._last_council_decision = decision.as_dict()
+
+        if decision.decision != "halt":
+            return False
+
+        with self._lock:
+            self._council_skipped_ticks += 1
+            self._last_council_skip_ts = float(self._clock())
+            self._ticks += 1
+            self._last_tick_ts = self._last_council_skip_ts
+        logger.warning(
+            "TradingRunner skipping tick on council halt: %s",
+            decision.reason,
+        )
+        self._maybe_dump_status()
+        return True
 
     def _record_error(self, reason: str) -> None:
         with self._lock:

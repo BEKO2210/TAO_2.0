@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — `TradingCouncil` wired as runner pre-tick veto (PR 2U)
+
+The `TradingCouncil` (PR 2T) is now an optional pre-tick veto in
+`TradingRunner`. When wired, the runner calls `council.aggregate()`
+before every tick; if the decision is `"halt"` (high-confidence
+VETO from `risk_security_agent` or `qa_test_agent`), the tick is
+skipped — no snapshot, no `strategy.evaluate`, no executor dispatch
+— and the decision is recorded under `status.last_council_decision`.
+The runner is **not** permanently halted: the next tick re-asks the
+council so a transient veto unblocks naturally without operator
+`reset()`. `bullish` / `neutral` / `bearish` are advisory and do not
+block the tick.
+
+**This PR also renames the aggregator from "TradingBrain" to
+"TradingCouncil"** to better reflect what it is: a multi-voice
+expert team with a veto layer, not a single anthropomorphic decider.
+All identifiers, files, CLI command, docs, and tests follow the new
+name; no functional change to the aggregator itself.
+
+What changed
+- `tao_swarm/trading/runner.py`: optional `council=` constructor arg;
+  new pre-tick check in `tick()`; new status fields `council_enabled`,
+  `council_skipped_ticks`, `last_council_decision`,
+  `last_council_skip_ts`. Defensive: a council `aggregate()` that
+  raises is recorded as a runner error but never breaks the loop.
+- `tao_swarm/cli/tao_swarm.py`: `trade run` gains `--require-council`
+  + `--council-task` flags. With `--require-council`, the CLI builds
+  a `SwarmOrchestrator`, runs `--council-task` once to populate
+  `AgentContext`, constructs a `TradingCouncil(orch.context)`, and
+  hands it to the runner. Run-end summary surfaces
+  `council: skipped N tick(s) on veto`.
+- `tao_swarm/trading/council.py` (was `brain.py`), `__init__.py`
+  re-exports, `tao_swarm/cli/tao_swarm.py` (`trade council`
+  command), `docs/trading_council.md`, `README.md`,
+  `tests/test_trading_council.py`: rename `TradingBrain` →
+  `TradingCouncil`, `BrainDecision` → `CouncilDecision`,
+  `BRAIN_DEFAULT_WEIGHTS` → `COUNCIL_DEFAULT_WEIGHTS`.
+- `docs/trading_council.md`: new "Runner-Integration" section with
+  the Python API + the `--require-council` CLI flow.
+- `tests/test_runner_council_integration.py` (new, 9 tests): runner
+  default behaviour without council; halt path skips the tick;
+  transient halt → clear resumes; bullish / neutral / bearish do not
+  block; `aggregate()` exception is advisory; status JSON round-trip
+  preserves the council fields.
+
+Tests: 998 passed, 12 deselected; council suite alone is 57.
+
 ### Changed — License: BUSL-1.1 → fully proprietary
 
 The owner has elected to take the project closed-source. The previous
@@ -266,7 +313,7 @@ output rather than reasoning over collector data.
   installed; namespaced cache discovery.
 - **Benchmark suite** — realistic workload personas, mock by
   default, opt-in `make bench-live` for real endpoints.
-- **CricketBrain demo plug-in** — end-to-end worked example of an
+- **CricketCouncil demo plug-in** — end-to-end worked example of an
   external agent (later removed in favor of a serious replacement
   plug-in tracked separately).
 - **Hardened agent contract** — every built-in's `run()` is

@@ -1,5 +1,5 @@
 """
-Tests for the TradingBrain expert-team aggregator (PR 2T).
+Tests for the TradingCouncil expert-team aggregator (PR 2T).
 
 Coverage
 ========
@@ -14,12 +14,12 @@ Each per-agent extractor:
   published its report.
 - Maps the underlying domain-data to a sensible direction.
 
-TradingBrain.collect:
+TradingCouncil.collect:
 - Returns all signals when every agent has published.
 - Skips Nones from extractors that don't have data yet.
 - Survives an extractor raising (defensive — never propagates).
 
-TradingBrain.aggregate:
+TradingCouncil.aggregate:
 - VETO from risk/qa with high confidence → halt.
 - Low-confidence veto degrades to a heavy bearish weight.
 - Weighted average maps to bullish/bearish/neutral by thresholds.
@@ -36,10 +36,10 @@ import pytest
 from tao_swarm.orchestrator.context import AgentContext
 from tao_swarm.trading import (
     AgentSignal,
-    BrainDecision,
-    TradingBrain,
+    CouncilDecision,
+    TradingCouncil,
 )
-from tao_swarm.trading.brain import (
+from tao_swarm.trading.council import (
     DEFAULT_WEIGHTS,
     extract_dashboard_design,
     extract_documentation,
@@ -405,12 +405,12 @@ def test_documentation_coverage_above_50_is_neutral_to_bullish():
 
 
 # ---------------------------------------------------------------------------
-# TradingBrain.collect / aggregate
+# TradingCouncil.collect / aggregate
 # ---------------------------------------------------------------------------
 
-def test_brain_collect_with_full_context_returns_all_signals():
-    brain = TradingBrain(_build_full_context())
-    signals = brain.collect()
+def test_council_collect_with_full_context_returns_all_signals():
+    council = TradingCouncil(_build_full_context())
+    signals = council.collect()
     # 14 agents have data (dashboard_design returns None always).
     assert len(signals) >= 12
     names = {s.name for s in signals}
@@ -419,27 +419,27 @@ def test_brain_collect_with_full_context_returns_all_signals():
     assert "risk_security_agent" in names
 
 
-def test_brain_collect_with_empty_context_returns_empty():
-    brain = TradingBrain(AgentContext())
-    assert brain.collect() == []
+def test_council_collect_with_empty_context_returns_empty():
+    council = TradingCouncil(AgentContext())
+    assert council.collect() == []
 
 
-def test_brain_aggregate_full_context_is_decision_object():
-    brain = TradingBrain(_build_full_context())
-    decision = brain.aggregate()
-    assert isinstance(decision, BrainDecision)
+def test_council_aggregate_full_context_is_decision_object():
+    council = TradingCouncil(_build_full_context())
+    decision = council.aggregate()
+    assert isinstance(decision, CouncilDecision)
     assert decision.decision in {"bullish", "bearish", "neutral"}
     assert 0.0 <= (decision.score or 0.0) <= 1.0
 
 
-def test_brain_aggregate_empty_context_is_neutral():
-    brain = TradingBrain(AgentContext())
-    decision = brain.aggregate()
+def test_council_aggregate_empty_context_is_neutral():
+    council = TradingCouncil(AgentContext())
+    decision = council.aggregate()
     assert decision.decision == "neutral"
     assert decision.score == 0.5
 
 
-def test_brain_aggregate_DANGER_halts_trading():
+def test_council_aggregate_DANGER_halts_trading():
     """A high-confidence veto from risk_security must halt regardless
     of how bullish other signals are."""
     ctx = _build_full_context()
@@ -447,27 +447,27 @@ def test_brain_aggregate_DANGER_halts_trading():
         "classification": "DANGER",
         "findings": ["coldkey_swap_social_engineering"],
     })
-    brain = TradingBrain(ctx)
-    decision = brain.aggregate()
+    council = TradingCouncil(ctx)
+    decision = council.aggregate()
     assert decision.decision == "halt"
     assert decision.score is None
     assert "VETO" in decision.reason
 
 
-def test_brain_aggregate_qa_critical_also_halts():
+def test_council_aggregate_qa_critical_also_halts():
     ctx = _build_full_context()
     ctx.publish("qa_test_agent", {
         "findings_count": 1,
         "severities": {"critical": 1},
     })
-    brain = TradingBrain(ctx)
-    decision = brain.aggregate()
+    council = TradingCouncil(ctx)
+    decision = council.aggregate()
     assert decision.decision == "halt"
 
 
-def test_brain_aggregate_low_confidence_veto_does_not_halt():
+def test_council_aggregate_low_confidence_veto_does_not_halt():
     """If we manually publish a low-confidence veto (shouldn't
-    normally happen, but defensive), the brain shouldn't halt."""
+    normally happen, but defensive), the council shouldn't halt."""
 
     class _CustomCtx:
         """Pretend context where one extractor returns a low-conf veto."""
@@ -480,11 +480,11 @@ def test_brain_aggregate_low_confidence_veto_does_not_halt():
             return self._real.get(key, default)
 
     # Use a custom extractor by injecting a low-conf veto via a
-    # special signal — the brain does veto detection by looking
+    # special signal — the council does veto detection by looking
     # at the AgentSignal direction + confidence after collect().
     # We simulate this by subclassing.
 
-    class _LowConfBrain(TradingBrain):
+    class _LowConfCouncil(TradingCouncil):
         def collect(self):
             base = super().collect()
             # Drop any high-conf veto and replace with a low-conf one.
@@ -497,15 +497,15 @@ def test_brain_aggregate_low_confidence_veto_does_not_halt():
             ))
             return base
 
-    brain = _LowConfBrain(_build_full_context())
-    decision = brain.aggregate()
+    council = _LowConfCouncil(_build_full_context())
+    decision = council.aggregate()
     # Halt is keyed off confidence ≥ veto_confidence (default 0.8).
     # A 0.5 veto must NOT halt — it's just a tilt.
     assert decision.decision != "halt"
 
 
-def test_brain_aggregate_high_quality_signals_yield_bullish():
-    """When everything is positive AND no vetoes, brain leans bullish."""
+def test_council_aggregate_high_quality_signals_yield_bullish():
+    """When everything is positive AND no vetoes, council leans bullish."""
     ctx = _build_full_context()
     # Reinforce: top score 95, +20% trend
     ctx.publish("subnet_scoring_agent", {
@@ -514,15 +514,15 @@ def test_brain_aggregate_high_quality_signals_yield_bullish():
     ctx.publish("market_trade_agent", {
         "price_change": {"7d_pct": 20.0, "24h_pct": 5.0},
     })
-    brain = TradingBrain(ctx)
-    decision = brain.aggregate()
+    council = TradingCouncil(ctx)
+    decision = council.aggregate()
     assert decision.decision == "bullish"
 
 
-def test_brain_aggregate_negative_signals_yield_bearish():
+def test_council_aggregate_negative_signals_yield_bearish():
     """When the heavy-weight signals (scoring, market, wallet, risk)
     all point bearish AND no bullish ops signals are present, the
-    brain must dip below 0.4."""
+    council must dip below 0.4."""
     ctx = AgentContext()
     ctx.publish("subnet_scoring_agent", {
         "scored_subnets": [{"netuid": 7, "final_score": 5.0}],
@@ -539,14 +539,14 @@ def test_brain_aggregate_negative_signals_yield_bearish():
     ctx.publish("risk_security_agent", {
         "classification": "CAUTION", "findings": ["x"],
     })
-    brain = TradingBrain(ctx)
-    decision = brain.aggregate()
+    council = TradingCouncil(ctx)
+    decision = council.aggregate()
     assert decision.decision == "bearish", (
         f"expected bearish, got {decision.decision} score={decision.score}"
     )
 
 
-def test_brain_custom_weights_zero_out_signal():
+def test_council_custom_weights_zero_out_signal():
     """If the operator zeroes out subnet_scoring's weight, the
     aggregate should barely move when scoring changes."""
     # Build two fresh contexts (AgentContext can't deepcopy because
@@ -564,32 +564,32 @@ def test_brain_custom_weights_zero_out_signal():
     weights = dict(DEFAULT_WEIGHTS)
     weights["subnet_scoring_agent"] = 0.0
 
-    high = TradingBrain(ctx_high, weights=weights).aggregate()
-    low = TradingBrain(ctx_low, weights=weights).aggregate()
+    high = TradingCouncil(ctx_high, weights=weights).aggregate()
+    low = TradingCouncil(ctx_low, weights=weights).aggregate()
     # With scoring zero-weighted, the two should yield nearly the
     # same score (other agents unchanged).
     assert abs((high.score or 0) - (low.score or 0)) < 0.05
 
 
-def test_brain_aggregate_extractor_exception_doesnt_propagate(monkeypatch):
-    """If one extractor blows up, the brain still works."""
-    from tao_swarm.trading import brain as brain_mod
+def test_council_aggregate_extractor_exception_doesnt_propagate(monkeypatch):
+    """If one extractor blows up, the council still works."""
+    from tao_swarm.trading import council as council_mod
 
     def _boom(_ctx):
         raise RuntimeError("simulated extractor failure")
 
     # Replace one extractor with a boom-er.
-    new_extractors = list(brain_mod._EXTRACTORS)
+    new_extractors = list(council_mod._EXTRACTORS)
     new_extractors[0] = (new_extractors[0][0], _boom)
-    monkeypatch.setattr(brain_mod, "_EXTRACTORS", new_extractors)
+    monkeypatch.setattr(council_mod, "_EXTRACTORS", new_extractors)
 
-    brain = TradingBrain(_build_full_context())
-    decision = brain.aggregate()  # should not raise
-    assert isinstance(decision, BrainDecision)
+    council = TradingCouncil(_build_full_context())
+    decision = council.aggregate()  # should not raise
+    assert isinstance(decision, CouncilDecision)
 
 
-def test_brain_decision_as_dict_round_trip():
-    decision = TradingBrain(_build_full_context()).aggregate()
+def test_council_decision_as_dict_round_trip():
+    decision = TradingCouncil(_build_full_context()).aggregate()
     payload = decision.as_dict()
     json.dumps(payload)
     assert "decision" in payload
@@ -597,21 +597,21 @@ def test_brain_decision_as_dict_round_trip():
     assert isinstance(payload["signals"], list)
 
 
-def test_brain_constructor_validates_thresholds():
+def test_council_constructor_validates_thresholds():
     ctx = AgentContext()
     with pytest.raises(ValueError):
-        TradingBrain(ctx, bullish_threshold=0.4)
+        TradingCouncil(ctx, bullish_threshold=0.4)
     with pytest.raises(ValueError):
-        TradingBrain(ctx, bearish_threshold=0.6)
+        TradingCouncil(ctx, bearish_threshold=0.6)
     with pytest.raises(ValueError):
-        TradingBrain(ctx, veto_confidence=1.5)
+        TradingCouncil(ctx, veto_confidence=1.5)
 
 
 def test_default_weights_cover_every_agent():
     """Every extractor's agent name has a default weight (so the
-    brain doesn't silently fall back to weight=1.0 for some agents
+    council doesn't silently fall back to weight=1.0 for some agents
     and the documented weight scheme for others)."""
-    from tao_swarm.trading.brain import _EXTRACTORS
+    from tao_swarm.trading.council import _EXTRACTORS
     extractor_names = {name for name, _ in _EXTRACTORS}
     weight_names = set(DEFAULT_WEIGHTS)
     missing = extractor_names - weight_names
