@@ -1,14 +1,14 @@
-# TradingBrain — die 15 Agenten als Experten-Team
+# TradingCouncil — die 15 Agenten als Experten-Team
 
 PR 2S hat jeder Agent eine echte Datenquelle gegeben. PR 2T baut
-darauf den nächsten Layer: ein **TradingBrain** der die
+darauf den nächsten Layer: ein **TradingCouncil** der die
 spezialisierten Sichten der 15 Agenten in **eine** koordinierte
 Trading-Entscheidung fusioniert.
 
 ## Wer beiträgt was
 
 Jeder Agent hat eine *Spezialität* — die spezifische Sicht die
-nur er liefern kann. Das Brain liest die published Reports im
+nur er liefern kann. Das Council liest die published Reports im
 `AgentContext`, extrahiert pro Agent ein typed `AgentSignal`,
 und aggregiert alles.
 
@@ -30,17 +30,17 @@ und aggregiert alles.
 | 14 | `documentation_agent` | Swarm Self-Coverage-Health (meta) | **0.2** |
 | 15 | `dashboard_design_agent` | (ehrlicher Stub — UI-Work, kein Trading-Signal) | **0.0** |
 
-## Aggregation — wie das Brain entscheidet
+## Aggregation — wie das Council entscheidet
 
 ```python
 from tao_swarm.orchestrator import SwarmOrchestrator
-from tao_swarm.trading import TradingBrain
+from tao_swarm.trading import TradingCouncil
 
 orch = SwarmOrchestrator(config)
 orch.execute_task({"type": "general_review"})  # populates AgentContext
 
-brain = TradingBrain(orch.context)
-decision = brain.aggregate()
+council = TradingCouncil(orch.context)
+decision = council.aggregate()
 
 print(decision.decision)  # "bullish" | "bearish" | "neutral" | "halt"
 print(decision.score)     # [0, 1] — None when halted
@@ -53,7 +53,7 @@ for sig in decision.signals:
 
 1. **Collect** — frage jeden Extraktor nach seinem `AgentSignal`.
    Extraktoren returnen `None` wenn der Agent noch nicht
-   published hat — das ist OK, das Brain läuft mit partiellem
+   published hat — das ist OK, das Council läuft mit partiellem
    Wissen.
 
 2. **Veto-Check** — wenn ein Signal `direction == "veto"` UND
@@ -98,29 +98,29 @@ risk-Issues sollte gar nicht traden.
 
 ## Custom Weights
 
-Operator kann das Brain bias-en:
+Operator kann das Council bias-en:
 
 ```python
-from tao_swarm.trading import BRAIN_DEFAULT_WEIGHTS, TradingBrain
+from tao_swarm.trading import COUNCIL_DEFAULT_WEIGHTS, TradingCouncil
 
 # z.B. mehr Gewicht auf Macro-Trend (fundamentaler Trader)
-weights = dict(BRAIN_DEFAULT_WEIGHTS)
+weights = dict(COUNCIL_DEFAULT_WEIGHTS)
 weights["market_trade_agent"] = 2.5
 weights["subnet_scoring_agent"] = 0.8
 
-brain = TradingBrain(ctx, weights=weights)
+council = TradingCouncil(ctx, weights=weights)
 ```
 
-Weight 0 = Agent komplett aus dem Brain ausschalten.
+Weight 0 = Agent komplett aus dem Council ausschalten.
 
-## CLI: `tao-swarm trade brain`
+## CLI: `tao-swarm trade council`
 
-Zeigt die aktuelle Brain-Sicht in einer kompakten Tabelle:
+Zeigt die aktuelle Council-Sicht in einer kompakten Tabelle:
 
 ```
-$ tao-swarm --live --network finney trade brain
+$ tao-swarm --live --network finney trade council
 
-  TradingBrain — expert-team aggregate
+  TradingCouncil — expert-team aggregate
 
   Decision: BULLISH   score=0.6234
   Reason:   aggregate of 14 signal(s)
@@ -134,33 +134,97 @@ $ tao-swarm --live --network finney trade brain
     miner_engineering_agent   bullish   0.750   0.50    0.70  mining viability: …
     …
 
-  Tip: rebalance weights via tao_swarm.trading.BRAIN_DEFAULT_WEIGHTS to bias the brain.
+  Tip: rebalance weights via tao_swarm.trading.COUNCIL_DEFAULT_WEIGHTS to bias the council.
 ```
 
 `--json` für maschinen-lesbares Output.
 
+## Runner-Integration: Council als Pre-Tick Veto
+
+Der `TradingRunner` akzeptiert ein optionales `council=` Argument.
+Wenn gesetzt, fragt der Runner das Council **vor jedem Tick** und
+skippt den Tick komplett wenn das Council `"halt"` returned (also
+ein high-confidence VETO von `risk_security_agent` oder
+`qa_test_agent`):
+
+```python
+from tao_swarm.orchestrator import SwarmOrchestrator
+from tao_swarm.trading import TradingCouncil, TradingRunner
+
+orch = SwarmOrchestrator(config)
+orch.execute_task({"type": "general_review"})  # populate AgentContext
+
+council = TradingCouncil(orch.context)
+runner = TradingRunner(
+    strategy=strat, executor=exec, snapshot_fn=snap,
+    council=council,  # ← optional, default None
+)
+runner.run_forever()
+```
+
+**Verhalten bei `decision == "halt"`:**
+
+- Snapshot-Fetch übersprungen
+- `strategy.evaluate()` nicht aufgerufen
+- Executor nicht eingeschaltet
+- `status.council_skipped_ticks` += 1
+- `status.last_council_decision` enthält die volle Decision (für Audit)
+- `status.last_council_skip_ts` zeigt wann zuletzt geskippt
+- `status.ticks` += 1 (geskippte Ticks zählen als Ticks)
+
+**Wichtig:** Der Runner wird **nicht** dauerhaft halted. Beim
+nächsten Tick wird das Council erneut konsultiert. Eine
+*transiente* Veto (z.B. ein DANGER-Text der wieder verschwindet)
+unblockt sich also automatisch — der Operator muss nicht `reset()`
+aufrufen.
+
+**Bullish / bearish / neutral** sind beratend — sie blockieren den
+Tick **nicht**. Die Strategy bleibt der Entscheider; das Council ist
+ein Veto-Mechanismus für die Sicherheits-Agenten.
+
+**Defensive:** Wirft `council.aggregate()` eine Exception, wird das
+als Runner-Error vermerkt aber der Tick läuft normal weiter — das
+Council ist beratend und darf den Loop nicht brechen.
+
+### CLI: `tao-swarm trade run --require-council`
+
+Den Runner mit Council vom CLI starten:
+
+```bash
+$ tao-swarm trade run \
+    --strategy momentum_rotation \
+    --paper \
+    --require-council \
+    --council-task general_review
+```
+
+`--require-council` baut intern einen `SwarmOrchestrator`,
+führt einmalig den `--council-task` aus (default `general_review`)
+damit die 15 Agenten in den AgentContext publishen, und übergibt
+das Council dann dem Runner.
+
 ## Architektur-Hinweise
 
-**Pull-based, nicht push.** Das Brain modifiziert keinen Agenten und
+**Pull-based, nicht push.** Das Council modifiziert keinen Agenten und
 greift nicht in deren `run()` ein. Es liest nur die bereits published
 Outputs aus dem Bus.
 
 **Defensive by construction.** Jeder Extraktor ist eine pure
 Funktion die `None` returned wenn der Agent nicht published oder
 das Output-Schema nicht passt. Ein einzelner Extraktor-Fehler
-crashed das Brain nie — `aggregate()` skippt schlecht-laufende
+crashed das Council nie — `aggregate()` skippt schlecht-laufende
 Extraktoren.
 
-**Stateless.** Brain hält keinen State. Multiple Instances mit
+**Stateless.** Council hält keinen State. Multiple Instances mit
 verschiedenen Weight-Schemes sind safe (z.B. operator vergleicht
-"trader-style" vs "investor-style" Brains parallel).
+"trader-style" vs "investor-style" Councils parallel).
 
-**Read-only.** Brain modifiziert nichts — weder Context noch Ledger.
+**Read-only.** Council modifiziert nichts — weder Context noch Ledger.
 Es ist ein read-only Aggregator den Strategien optional konsultieren.
 
-## Was das Brain (noch) nicht ist
+## Was das Council (noch) nicht ist
 
-- **Kein Trading-Executor.** Das Brain liefert eine Empfehlung;
+- **Kein Trading-Executor.** Das Council liefert eine Empfehlung;
   ob/wie sie umgesetzt wird entscheidet die Strategy + Executor.
 - **Kein State-Speicher.** Aggregat-Historie wird nicht persisted.
   Der Operator kann das selber via `decision.as_dict()` tun.
@@ -172,7 +236,7 @@ Es ist ein read-only Aggregator den Strategien optional konsultieren.
 
 | Was | Wo |
 |---|---|
-| `AgentSignal` + `BrainDecision` + `TradingBrain` | [`tao_swarm/trading/brain.py`](../tao_swarm/trading/brain.py) |
+| `AgentSignal` + `CouncilDecision` + `TradingCouncil` | [`tao_swarm/trading/council.py`](../tao_swarm/trading/council.py) |
 | 15 Extraktoren (per-Agent Signal-Logik) | gleiche Datei |
-| CLI | [`tao_swarm/cli/tao_swarm.py`](../tao_swarm/cli/tao_swarm.py) (`trade brain`) |
-| Tests | [`tests/test_trading_brain.py`](../tests/test_trading_brain.py) |
+| CLI | [`tao_swarm/cli/tao_swarm.py`](../tao_swarm/cli/tao_swarm.py) (`trade council`) |
+| Tests | [`tests/test_trading_council.py`](../tests/test_trading_council.py) |

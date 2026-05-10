@@ -1,5 +1,5 @@
 """
-TradingBrain — pull-based aggregator over the 15-agent expert team.
+TradingCouncil — pull-based aggregator over the 15-agent expert team.
 
 After PR 2S, every agent has a real data lineage and publishes a
 typed report to the :class:`tao_swarm.orchestrator.context.AgentContext`
@@ -11,9 +11,9 @@ single trading view the strategies + executor can consult.
 Architectural choice
 ====================
 
-The brain is a **consumer** of agent outputs, not a modification
+The council is a **consumer** of agent outputs, not a modification
 of them. That keeps each agent's contract narrow (it just
-publishes its report) and lets the brain evolve independently as
+publishes its report) and lets the council evolve independently as
 new aggregation rules / signals are needed.
 
 Pull-based, never raises
@@ -23,12 +23,12 @@ Each extractor function takes the AgentContext and returns either
 an ``AgentSignal`` or ``None`` (when the upstream agent hasn't
 published, or when its output is missing the field this extractor
 cares about). Extractors are pure, defensive, and never raise —
-the brain is allowed to operate with partial information.
+the council is allowed to operate with partial information.
 
 Aggregation
 ===========
 
-:meth:`TradingBrain.aggregate` returns a unified decision:
+:meth:`TradingCouncil.aggregate` returns a unified decision:
 
 - A **veto** is a special signal direction that halts trading
   immediately. Currently emitted by ``risk_security_agent`` (when
@@ -37,7 +37,7 @@ Aggregation
   to fire — a low-confidence veto degrades to a strong-bearish
   weight instead.
 
-- Otherwise the brain computes a ``weighted-average`` over all
+- Otherwise the council computes a ``weighted-average`` over all
   non-veto signals. Weights default to 1.0 per agent but can be
   overridden via the ``weights`` constructor argument or via the
   CLI.
@@ -71,7 +71,7 @@ class AgentSignal:
     Always emit a signal when you have *any* relevant view; emit
     ``None`` (return from the extractor) when you genuinely have
     no data. Confidence + evidence let the operator audit why the
-    brain reached a particular decision.
+    council reached a particular decision.
     """
 
     name: str                  # e.g. "subnet_scoring_agent"
@@ -102,8 +102,8 @@ class AgentSignal:
 
 
 @dataclass(frozen=True)
-class BrainDecision:
-    """The aggregated output of :meth:`TradingBrain.aggregate`."""
+class CouncilDecision:
+    """The aggregated output of :meth:`TradingCouncil.aggregate`."""
 
     decision: str              # "bullish" | "bearish" | "neutral" | "halt"
     score: float | None        # None when halted
@@ -249,7 +249,7 @@ def extract_wallet_watch(ctx: Any) -> AgentSignal | None:
     """Concentration-risk signal.
 
     If the operator's stake is concentrated in one position, the
-    brain shouldn't be encouraging *more* of the same. Returns
+    council shouldn't be encouraging *more* of the same. Returns
     bearish when concentration is high.
     """
     out = _safe_get(ctx, "wallet_watch_agent")
@@ -609,8 +609,8 @@ def extract_dashboard_design(ctx: Any) -> AgentSignal | None:
     return None
 
 
-# Registry of extractors used by the brain. Order doesn't matter
-# (the brain treats them as a set), but keeping it stable helps
+# Registry of extractors used by the council. Order doesn't matter
+# (the council treats them as a set), but keeping it stable helps
 # the dashboard render deterministically.
 _EXTRACTORS: list[tuple[str, Extractor]] = [
     ("subnet_scoring_agent",       extract_subnet_scoring),
@@ -632,10 +632,10 @@ _EXTRACTORS: list[tuple[str, Extractor]] = [
 
 
 # ---------------------------------------------------------------------------
-# TradingBrain
+# TradingCouncil
 # ---------------------------------------------------------------------------
 
-class TradingBrain:
+class TradingCouncil:
     """Aggregates the 15 expert signals into one trading decision.
 
     Construct with an :class:`AgentContext` (the bus from the
@@ -643,7 +643,7 @@ class TradingBrain:
     :meth:`collect` for the per-agent signal list, or
     :meth:`aggregate` for the unified decision.
 
-    The brain is read-only — it never modifies the context or any
+    The council is read-only — it never modifies the context or any
     agent state. Multiple instances can coexist (e.g. one per
     different weight scheme).
     """
@@ -692,13 +692,13 @@ class TradingBrain:
             signals.append(sig)
         return signals
 
-    def aggregate(self) -> BrainDecision:
+    def aggregate(self) -> CouncilDecision:
         """Combine signals into a single decision.
 
         Algorithm:
         1. Collect all signals.
         2. If any signal has direction='veto' AND confidence ≥
-           ``veto_confidence``, the brain returns 'halt' immediately.
+           ``veto_confidence``, the council returns 'halt' immediately.
         3. Otherwise, compute a confidence-weighted weighted-average
            score across all non-veto signals. (A degraded veto with
            low confidence becomes a strong-bearish weight.)
@@ -707,7 +707,7 @@ class TradingBrain:
         """
         signals = self.collect()
         if not signals:
-            return BrainDecision(
+            return CouncilDecision(
                 decision="neutral",
                 score=0.5,
                 reason="no agents have published yet",
@@ -718,7 +718,7 @@ class TradingBrain:
         # Step 1: hard veto check.
         for sig in signals:
             if sig.direction == "veto" and sig.confidence >= self._veto_conf:
-                return BrainDecision(
+                return CouncilDecision(
                     decision="halt",
                     score=None,
                     reason=f"VETO from {sig.name}: {sig.evidence}",
@@ -740,7 +740,7 @@ class TradingBrain:
             weighted_sum += eff_w * sig.score
 
         if total_weight <= 0:
-            return BrainDecision(
+            return CouncilDecision(
                 decision="neutral",
                 score=0.5,
                 reason="all signals zero-weighted (operator-configured)",
@@ -756,7 +756,7 @@ class TradingBrain:
         else:
             decision = "neutral"
 
-        return BrainDecision(
+        return CouncilDecision(
             decision=decision,
             score=round(score, 4),
             reason=f"aggregate of {len(signals)} signal(s)",

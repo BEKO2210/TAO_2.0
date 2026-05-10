@@ -1531,13 +1531,33 @@ def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
         "enforced by an external orchestrator."
     ),
 )
+@click.option(
+    "--require-council", is_flag=True,
+    help=(
+        "Wire a TradingCouncil as a pre-tick veto. The runner builds "
+        "a SwarmOrchestrator, runs --council-task once to populate "
+        "AgentContext, and then consults the council before every "
+        "tick. If the council returns 'halt' (high-confidence VETO "
+        "from risk_security or qa_test) the tick is skipped. The "
+        "next tick re-asks the council so a transient veto does not "
+        "permanently halt the runner."
+    ),
+)
+@click.option(
+    "--council-task", default="general_review", show_default=True,
+    help=(
+        "Orchestrator task to run once at startup so agents publish "
+        "to AgentContext for the council to read. Only used when "
+        "--require-council is set."
+    ),
+)
 @click.pass_context
 def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
     ctx, strategy_name, ensemble_weight_fn, paper, keystore_path,
     threshold_pct, slot_size_tao, max_position_tao, max_daily_loss_tao,
     max_total_tao, tick_interval_s, max_ticks, ledger_db, kill_switch_path,
     watchlist, reconcile_coldkey, verify_broadcasts, status_file,
-    live_trading, yes_i_understand,
+    live_trading, yes_i_understand, require_council, council_task,
 ):
     """Run a strategy live or in paper mode against the read-only collectors."""
     from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
@@ -1693,6 +1713,36 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
         )
         chain_reader = BittensorChainPositionReader(network=net_for_reader)
 
+    # 6. Optional TradingCouncil pre-tick veto. Built from a one-shot
+    #    orchestrator run so the 15 agents have published to AgentContext
+    #    before the runner consults the council. The council is read-only
+    #    and re-asks the same context on each tick — a transient veto
+    #    therefore unblocks naturally if the upstream signal clears.
+    council = None
+    if require_council:
+        from tao_swarm.orchestrator import SwarmOrchestrator
+        from tao_swarm.trading import TradingCouncil
+
+        click.echo(click.style(
+            f"  Wiring TradingCouncil — seeding context via task "
+            f"'{council_task}' …",
+            fg="blue",
+        ))
+        orch = SwarmOrchestrator(config)
+        try:
+            orch.execute_task({"type": council_task})
+        except Exception as exc:
+            raise click.ClickException(
+                f"--require-council failed to seed AgentContext via task "
+                f"'{council_task}': {exc!r}"
+            )
+        council = TradingCouncil(orch.context)
+        seed_decision = council.aggregate()
+        click.echo(
+            f"    seed decision: {seed_decision.decision.upper()} "
+            f"(score={seed_decision.score})"
+        )
+
     runner = TradingRunner(
         strategy=strat,
         executor=executor,
@@ -1702,6 +1752,7 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
         chain_reader=chain_reader,
         reconcile_coldkey_ss58=reconcile_coldkey,
         status_file=status_file,
+        council=council,
     )
 
     click.echo(click.style(
@@ -1733,6 +1784,11 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
     click.echo(f"    executed:  {s.executed}")
     click.echo(f"    refused:   {s.refused}")
     click.echo(f"    errors:    {s.errors}")
+    if s.council_enabled:
+        click.echo(
+            f"    council:   skipped {s.council_skipped_ticks} tick(s) "
+            f"on veto"
+        )
     click.echo()
 
 
@@ -1878,15 +1934,15 @@ def trade_learning_report(
         click.echo()
 
 
-@trade.command("brain")
+@trade.command("council")
 @click.option(
     "--task",
     type=str,
     default="general_review",
     show_default=True,
     help=(
-        "Orchestrator task to run before sampling the brain. The "
-        "brain reads agent outputs from AgentContext, so the swarm "
+        "Orchestrator task to run before sampling the council. The "
+        "council reads agent outputs from AgentContext, so the swarm "
         "needs to have run first."
     ),
 )
@@ -1895,23 +1951,23 @@ def trade_learning_report(
     help="Print machine-readable JSON instead of a table.",
 )
 @click.pass_context
-def trade_brain(ctx, task, json_output):
-    """Show the unified TradingBrain decision: per-agent signals + aggregate.
+def trade_council(ctx, task, json_output):
+    """Show the unified TradingCouncil decision: per-agent signals + aggregate.
 
-    The brain pulls each of the 15 agents' specialty signal from the
+    The council pulls each of the 15 agents' specialty signal from the
     orchestrator's AgentContext bus, weights them, and produces one
     'bullish / bearish / neutral / halt' decision. Veto layer gives
     risk_security and qa_test the ability to halt trading on their
     own.
 
     This command is read-only: it runs the full swarm (so the agents
-    publish their reports), then samples the brain. No trades are
+    publish their reports), then samples the council. No trades are
     proposed or executed.
     """
     import json as _json
 
     from tao_swarm.orchestrator import SwarmOrchestrator
-    from tao_swarm.trading import TradingBrain
+    from tao_swarm.trading import TradingCouncil
 
     config = ctx.obj["config"]
     click.echo(_mode_banner(config))
@@ -1927,8 +1983,8 @@ def trade_brain(ctx, task, json_output):
         ctx.exit(2)
         return
 
-    brain = TradingBrain(orch.context)
-    decision = brain.aggregate()
+    council = TradingCouncil(orch.context)
+    decision = council.aggregate()
 
     if json_output:
         click.echo(_json.dumps(decision.as_dict(), indent=2))
@@ -1948,7 +2004,7 @@ def trade_brain(ctx, task, json_output):
         "veto":    "red",
     }
     click.echo(click.style(
-        "\n  TradingBrain — expert-team aggregate", fg="blue", bold=True,
+        "\n  TradingCouncil — expert-team aggregate", fg="blue", bold=True,
     ))
     click.echo()
     color = colors.get(decision.decision, "white")
@@ -1985,8 +2041,8 @@ def trade_brain(ctx, task, json_output):
 
     click.echo()
     click.echo(click.style(
-        "  Tip: rebalance weights via tao_swarm.trading.BRAIN_DEFAULT_WEIGHTS "
-        "to bias the brain.",
+        "  Tip: rebalance weights via tao_swarm.trading.COUNCIL_DEFAULT_WEIGHTS "
+        "to bias the council.",
         fg="cyan",
     ))
     click.echo()

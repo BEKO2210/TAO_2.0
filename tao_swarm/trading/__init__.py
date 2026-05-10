@@ -45,13 +45,13 @@ Public surface
 from __future__ import annotations
 
 from tao_swarm.trading.backtest import Backtester, BacktestResult
-from tao_swarm.trading.brain import (
-    DEFAULT_WEIGHTS as BRAIN_DEFAULT_WEIGHTS,
+from tao_swarm.trading.council import (
+    DEFAULT_WEIGHTS as COUNCIL_DEFAULT_WEIGHTS,
 )
-from tao_swarm.trading.brain import (
+from tao_swarm.trading.council import (
     AgentSignal,
-    BrainDecision,
-    TradingBrain,
+    CouncilDecision,
+    TradingCouncil,
 )
 from tao_swarm.trading.executor import ExecResult, Executor
 from tao_swarm.trading.guards import (
@@ -114,11 +114,11 @@ __all__ = [
     "SUPPORTED_ACTIONS",
     "AuthorizationError",
     "AgentSignal",
-    "BRAIN_DEFAULT_WEIGHTS",
+    "COUNCIL_DEFAULT_WEIGHTS",
     "BacktestResult",
     "Backtester",
-    "BrainDecision",
-    "TradingBrain",
+    "CouncilDecision",
+    "TradingCouncil",
     "BittensorChainPositionReader",
     "BittensorSigner",
     "BroadcastError",
