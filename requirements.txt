@@ -39,6 +39,9 @@ urllib3>=2.1.0
 # --- DASHBOARD (STREAMLIT) ---
 streamlit>=1.28.0
 plotly>=5.18.0
+# Optional: timed auto-refresh for the dashboard. The app degrades to a
+# manual refresh button if this isn't installed.
+streamlit-autorefresh>=1.0.1
 
 # --- LOGGING ---
 structlog>=23.2.0

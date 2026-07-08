@@ -65,6 +65,20 @@ except ImportError:
     def make_subplots(*_a, **_k):  # noqa: ARG001 — stub when plotly missing
         return None
 
+# ── Optional auto-refresh component ───────────────────────────────────────
+# Lets the page rerun itself on a timer (reads fresh runner status /
+# ledger / market data without a manual click). Degrades gracefully to
+# a no-op if the component isn't installed, so the dashboard still runs.
+try:
+    from streamlit_autorefresh import st_autorefresh
+    AUTOREFRESH_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dep
+    AUTOREFRESH_AVAILABLE = False
+
+    def st_autorefresh(*_a, **_k):  # noqa: ARG001 — stub
+        return 0
+
+
 # ── Page config ───────────────────────────────────────────────────────────
 
 st.set_page_config(
@@ -283,6 +297,131 @@ def fetch_historical_prices(days: int = 30) -> list:
     return []
 
 
+@st.cache_data(ttl=30)
+def fetch_subnet_metrics() -> list:
+    """Fetch real per-subnet chain metrics written by populate_all_data."""
+    conn = get_db_connection("scores")
+    if not conn:
+        return []
+    rows = safe_query(
+        conn,
+        "SELECT netuid, name, tao_in, emission, volume, price "
+        "FROM subnet_metrics ORDER BY tao_in DESC",
+    )
+    conn.close()
+    return [
+        {
+            "netuid": r[0], "name": r[1] or "", "tao_in": r[2] or 0.0,
+            "emission": r[3] or 0.0, "volume": r[4] or 0.0,
+            "price": r[5] or 0.0,
+        }
+        for r in rows
+    ]
+
+
+def populate_all_data() -> dict:
+    """Fill the dashboard databases from live sources in one call.
+
+    Fetches real TAO market data (price + history) and the live subnet
+    list from the Bittensor chain, writes each subnet's real chain
+    metrics (tao_in / emission / volume / price) to ``subnet_metrics``,
+    and runs the scorer over them. Everything here is real data — no
+    fabricated numbers. Returns a summary for the caller to display.
+    """
+    import time
+
+    summary = {"market": "-", "subnets": 0, "scored": 0, "errors": []}
+    data_dir = Path(os.environ.get("TAO_DATA_DIR", "data"))
+
+    # --- Market (price + history) -------------------------------------
+    try:
+        from tao_swarm.collectors.market_data import MarketDataCollector
+        mc = MarketDataCollector({
+            "use_mock_data": False,
+            "db_path": str(data_dir / "market_cache.db"),
+        })
+        p = mc.get_tao_price()
+        summary["market"] = f"${p.get('price_usd', 0):,.2f}"
+        for d in (7, 30):
+            try:
+                mc.get_historical_data(d)
+            except Exception as exc:  # noqa: BLE001
+                summary["errors"].append(f"Historie {d}d: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        summary["errors"].append(f"Markt: {exc}")
+
+    # --- Subnets (live chain metrics + scoring) -----------------------
+    try:
+        from tao_swarm.collectors.chain_readonly import ChainReadOnlyCollector
+        from tao_swarm.scoring.subnet_score import SubnetScorer
+
+        net = os.environ.get("TAO_NETWORK", "finney")
+        cc = ChainReadOnlyCollector({
+            "use_mock_data": False, "network": net,
+            "db_path": str(data_dir / f"chain_cache.{net}.db"),
+        })
+        subs = cc.get_subnet_list()
+        subs = subs if isinstance(subs, list) else subs.get("subnets", [])
+        summary["subnets"] = len(subs)
+
+        sc = SubnetScorer({"db_path": str(data_dir / "scores.db")})
+        # Non-dict chain fields the scorer can't consume; strip before scoring.
+        drop = {"owner", "identity", "owner_hotkey", "symbol", "name",
+                "is_dynamic"}
+        rows = []
+        for sub in subs:
+            netuid = sub.get("netuid")
+            if netuid is None:
+                continue
+            clean = {k: v for k, v in sub.items() if k not in drop}
+            clean["netuid"] = netuid
+            try:
+                sc.score_subnet(clean)
+                summary["scored"] += 1
+            except Exception:  # noqa: BLE001 — scoring is best-effort
+                pass
+            rows.append((
+                int(netuid), sub.get("name", ""),
+                float(sub.get("tao_in", 0) or 0),
+                float(sub.get("emission", 0) or 0),
+                float(sub.get("subnet_volume", 0) or 0),
+                float(sub.get("price", 0) or 0),
+                time.time(),
+            ))
+
+        conn = sqlite3.connect(str(data_dir / "scores.db"))
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS subnet_metrics ("
+            "netuid INTEGER PRIMARY KEY, name TEXT, tao_in REAL, "
+            "emission REAL, volume REAL, price REAL, updated_at REAL)"
+        )
+        conn.executemany(
+            "INSERT OR REPLACE INTO subnet_metrics VALUES (?,?,?,?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:  # noqa: BLE001
+        summary["errors"].append(f"Subnetze: {exc}")
+
+    return summary
+
+
+def _load_all_button(label: str = "Alles laden (Live-Daten holen)") -> None:
+    """Render the one-click data-fill button + run it on click."""
+    if st.button(label, use_container_width=True):
+        with st.spinner("Lade Live-Daten von Bittensor + Markt …"):
+            s = populate_all_data()
+        st.cache_data.clear()
+        if s["errors"]:
+            st.warning("Teilweise geladen: " + " · ".join(s["errors"][:3]))
+        st.success(
+            f"{s['subnets']} Subnetze geladen, {s['scored']} bewertet · "
+            f"Markt {s['market']}."
+        )
+        st.rerun()
+
+
 # ── Page renderers ────────────────────────────────────────────────────────
 
 def render_system_status():
@@ -345,57 +484,67 @@ def render_system_status():
 
 
 def render_subnet_scores():
-    """Render the Subnet Scores page."""
-    st.header("Subnet Scores")
+    """Render the Subnetze page — real live chain metrics per subnet."""
+    st.header("Subnetze")
 
-    scores = fetch_subnet_scores()
+    metrics = fetch_subnet_metrics()
 
-    if not scores:
-        st.info("No subnet scores yet. Run scoring via CLI: `tao-swarm score <netuid>`")
+    if not metrics:
+        st.info(
+            "Noch keine Subnetz-Daten geladen. Ein Klick holt die echten "
+            "Live-Zahlen von der Bittensor-Kette."
+        )
+        _load_all_button()
         return
 
-    # Score distribution chart
-    df_scores = pd.DataFrame(scores)
-
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        st.subheader("Score Distribution")
-        fig = px.bar(
-            df_scores,
-            x="netuid",
-            y="score",
-            color="score",
-            color_continuous_scale=["#f85149", "#d29922", "#3fb950"],
-            labels={"netuid": "Subnet ID", "score": "Score (0-100)"},
-            text="score",
-        )
-        fig.update_layout(
-            paper_bgcolor=CHART["paper_bg"],
-            plot_bgcolor=CHART["plot_bg"],
-            font_color=CHART["font"],
-            xaxis=dict(gridcolor=CHART["grid"]),
-            yaxis=dict(gridcolor=CHART["grid"], range=[0, 105]),
-            height=400,
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col2:
-        st.subheader("Recommendations")
-        for s in scores[:10]:
-            score = s["score"]
-            color = "#3fb950" if score >= 75 else "#d29922" if score >= 50 else "#f85149"
-            st.markdown(
-                f"**Subnet {s['netuid']}**: `{s['score']:.1f}` — "
-                f"<span style='color:{color}'>{s['recommendation']}</span>",
-                unsafe_allow_html=True,
-            )
-
+    _load_all_button("Neu laden (aktualisieren)")
     st.divider()
 
-    # Detailed table
-    st.subheader("Score Details")
-    st.dataframe(df_scores, use_container_width=True, hide_index=True)
+    df = pd.DataFrame(metrics)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Subnetze", len(df))
+    c2.metric("TAO in Pools (Summe)", f"{df['tao_in'].sum():,.0f}".replace(",", "."))
+    top1 = df.iloc[0]
+    c3.metric("Größtes Subnetz", f"#{int(top1['netuid'])} {top1['name']}")
+
+    # Real, varying signal: pool depth (tao_in) of the top subnets.
+    st.subheader("Top 15 nach Pool-Tiefe (tao_in)")
+    top = df.head(15).copy()
+    top["label"] = top.apply(
+        lambda r: f"#{int(r['netuid'])} {r['name']}"[:22], axis=1,
+    )
+    fig = px.bar(
+        top, x="tao_in", y="label", orientation="h",
+        color="tao_in", color_continuous_scale=[CHART["grid"], CHART["line"]],
+        labels={"tao_in": "TAO in Pool", "label": ""},
+    )
+    fig.update_layout(
+        paper_bgcolor=CHART["paper_bg"], plot_bgcolor=CHART["plot_bg"],
+        font_color=CHART["font"], height=460,
+        yaxis=dict(autorange="reversed"),
+        xaxis=dict(gridcolor=CHART["grid"]), coloraxis_showscale=False,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Merge in the baseline scores if scoring produced any.
+    scores = {s["netuid"]: s for s in fetch_subnet_scores()}
+    show = df.rename(columns={
+        "netuid": "Subnetz", "name": "Name", "tao_in": "TAO (Pool)",
+        "emission": "Emission", "volume": "Volumen", "price": "Preis",
+    }).copy()
+    if scores:
+        show["Score"] = df["netuid"].map(
+            lambda n: round(scores[n]["score"], 1) if n in scores else None
+        )
+        st.caption(
+            "Score ist ein Basiswert nur aus Chain-Daten (ohne kuratierte "
+            "Profile) — er variiert daher wenig. Aussagekräftig sind die "
+            "echten Chain-Zahlen links."
+        )
+
+    st.subheader("Alle Subnetze (Live-Chain-Daten)")
+    st.dataframe(show, use_container_width=True, hide_index=True)
 
 
 def render_wallet_watch():
@@ -697,6 +846,15 @@ def render_trading():
     summary = summarise_ledger(ledger, strategy=selected_strategy, limit=500)
     s = summary.as_dict()
 
+    all_trades = list(ledger.list_trades(strategy=selected_strategy, limit=2000))
+    # The live paper runner books stake/unstake but never writes a
+    # realised-P&L row (only the backtester does, as ``unstake_realised``).
+    # So a 0 here means "not computed", not "zero profit" — label it
+    # honestly rather than implying a break-even result.
+    pnl_computed = any(
+        getattr(t, "action", "") == "unstake_realised" for t in all_trades
+    )
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total trades", s["total_trades"])
@@ -707,10 +865,16 @@ def render_trading():
     with col4:
         st.metric("Failed", s["failed_trades"])
 
-    st.metric(
-        "Realised P&L (TAO)",
-        f"{s['realised_pnl_tao']:+.4f}",
-    )
+    if pnl_computed:
+        st.metric("Realised P&L (TAO)", f"{s['realised_pnl_tao']:+.4f}")
+    else:
+        st.metric("Realised P&L (TAO)", "nicht berechnet")
+        st.caption(
+            "Der Live-Paper-Runner bucht Stakes/Unstakes, berechnet aber "
+            "keinen Gewinn/Verlust pro Trade. „0“ hieße hier „nicht "
+            "berechnet“, nicht „kein Gewinn“ — daher der Hinweis statt "
+            "einer Zahl."
+        )
 
     if s["distinct_strategies"]:
         st.caption(
@@ -718,7 +882,6 @@ def render_trading():
         )
 
     # ---- Equity curve ----------------------------------------------------
-    all_trades = list(ledger.list_trades(strategy=selected_strategy, limit=2000))
     curve = equity_curve(all_trades)
     if curve:
         st.subheader("Equity curve (realised P&L)")
@@ -1019,18 +1182,28 @@ def render_overview():
     ledger_path = Path(os.environ.get("TAO_LEDGER_DB", data_dir / "trades.db"))
     pnl = 0.0
     all_trades = []
+    pnl_computed = False
     if ledger_path.exists():
         ledger = PaperLedger(str(ledger_path))
         summary = summarise_ledger(ledger, limit=5000)
         pnl = summary.as_dict().get("realised_pnl_tao", 0.0)
         all_trades = list(ledger.list_trades(limit=5000))
         trades = max(trades, summary.as_dict().get("total_trades", 0))
+        # Only the backtester writes realised-P&L rows; the live paper
+        # runner does not. Without them a 0 means "not computed".
+        pnl_computed = any(
+            getattr(t, "action", "") == "unstake_realised" for t in all_trades
+        )
 
-    pnl_word = "Gewinn" if pnl > 0 else "Verlust" if pnl < 0 else "Ergebnis"
+    if pnl_computed:
+        pnl_word = "Gewinn" if pnl > 0 else "Verlust" if pnl < 0 else "Ergebnis"
+        pnl_cell = (pnl_word, f"{pnl:+,.2f}".replace(",", "."), "TAO (simuliert)")
+    else:
+        pnl_cell = ("Ergebnis", "n. b.", "nicht berechnet")
     st.markdown(hero_block([
         ("Prüfungen", f"{ticks:,}".replace(",", "."), "Marktchecks"),
         ("Trades", f"{trades:,}".replace(",", "."), "insgesamt"),
-        (pnl_word, f"{pnl:+,.2f}".replace(",", "."), "TAO (simuliert)"),
+        pnl_cell,
     ]), unsafe_allow_html=True)
 
     # ---- One simple chart --------------------------------------------
@@ -1056,8 +1229,10 @@ def render_overview():
         st.markdown(
             "- **Prüfungen** — wie oft der Bot den Markt angeschaut hat.\n"
             "- **Trades** — wie oft er (simuliert) gekauft/verkauft hat.\n"
-            "- **Gewinn/Verlust** — Summe aller abgeschlossenen Trades, "
-            "in TAO. Im Übungs-Modus ist das nur eine Simulation.\n"
+            "- **Ergebnis** — der Live-Übungs-Runner bucht Käufe/Verkäufe, "
+            "rechnet aber keinen Gewinn/Verlust pro Trade. Daher steht "
+            "hier **„n. b.“ (nicht berechnet)** — das ist ehrlicher als "
+            "eine erfundene Zahl.\n"
             "- **Ampel oben** — grün = läuft, rot = gestoppt.\n\n"
             "Mehr Details findest du über die Auswahl links "
             "(Trading, Markt, Subnetze …)."
@@ -1130,10 +1305,39 @@ def main():
 
         st.divider()
 
-        # 3) The one button most people need.
-        if st.button("Aktualisieren", use_container_width=True):
+        # 3) Refresh controls — a manual button plus an opt-out auto
+        # refresh. Auto refresh only reruns the script (cheap): live
+        # values like runner status and the ledger are read uncached so
+        # they update, while the market fetch keeps its own TTL so we
+        # never hammer the price API on every tick.
+        if st.button("Jetzt aktualisieren", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
+
+        # One click fills every page with real live data.
+        _load_all_button("Alles laden (Live-Daten)")
+
+        auto = st.toggle(
+            "Automatisch aktualisieren",
+            value=True,
+            help="Seite lädt sich selbst neu — bleibt auf der gewählten "
+                 "Seite.",
+        )
+        if auto:
+            secs = st.select_slider(
+                "Intervall",
+                options=[5, 10, 15, 30, 60],
+                value=15,
+                format_func=lambda s: f"{s}s",
+            )
+            if AUTOREFRESH_AVAILABLE:
+                st_autorefresh(interval=secs * 1000, key="auto_refresh")
+                st.caption(f"Aktualisiert alle {secs}s.")
+            else:
+                st.caption(
+                    "Auto-Refresh-Komponente fehlt "
+                    "(pip install streamlit-autorefresh)."
+                )
 
         st.divider()
 
