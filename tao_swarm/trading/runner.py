@@ -66,6 +66,13 @@ class _Position:
 
     size: float = 0.0
     entry: float = 0.0
+    # Size-weighted average *alpha price* (subnet ``price``, denominated
+    # in TAO) at which this position was opened. Used to compute a real
+    # realised P&L in TAO when the position is closed — independent of
+    # the ``entry`` field above, which mirrors whatever price the
+    # strategy reported (often pool depth) and is only used for the
+    # position-cap arithmetic.
+    mark_entry: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -276,6 +283,7 @@ class TradingRunner:
         self._last_council_skip_ts: float | None = None
 
         self._positions: dict[int, _Position] = {}
+        self._tick_prices: dict[int, float] = {}
         self._ticks = 0
         self._proposals = 0
         self._executed = 0
@@ -479,6 +487,18 @@ class TradingRunner:
                 snapshot if isinstance(snapshot, list) else [],
                 now=now,
             )
+            # Real per-subnet alpha price (in TAO) for this tick. Used to
+            # mark positions to market and compute a real realised P&L on
+            # close. Missing / zero prices simply skip the P&L calc.
+            self._tick_prices = {}
+            for sub in market_state.get("subnets", []):
+                uid = sub.get("netuid")
+                if uid is None:
+                    continue
+                try:
+                    self._tick_prices[int(uid)] = float(sub.get("price", 0) or 0)
+                except (TypeError, ValueError):
+                    continue
             proposals = self._strategy.evaluate(market_state)
         except Exception as exc:
             self._record_error(f"strategy.evaluate failed: {exc!r}")
@@ -572,7 +592,8 @@ class TradingRunner:
 
     def _apply_to_positions(self, prop: Any) -> None:
         """Mirror the backtester's bookkeeping so the position-cap
-        sees the right ``current_total_tao`` next tick."""
+        sees the right ``current_total_tao`` next tick, and — on close
+        — record a real realised P&L using the subnet's alpha price."""
         netuid = prop.target.get("netuid")
         if netuid is None:
             return
@@ -580,6 +601,7 @@ class TradingRunner:
             uid = int(netuid)
         except (TypeError, ValueError):
             return
+        mark = self._tick_prices.get(uid, 0.0)
         pos = self._positions.setdefault(uid, _Position())
         if prop.action == "stake":
             new_size = pos.size + prop.amount_tao
@@ -588,12 +610,52 @@ class TradingRunner:
                     (pos.entry * pos.size + prop.price_tao * prop.amount_tao)
                     / new_size
                 )
+                # Size-weighted average alpha entry price (in TAO).
+                if mark > 0:
+                    prev_mark = pos.mark_entry if pos.mark_entry > 0 else mark
+                    pos.mark_entry = (
+                        (prev_mark * pos.size + mark * prop.amount_tao)
+                        / new_size
+                    )
             pos.size = new_size
         elif prop.action == "unstake":
+            close_size = min(prop.amount_tao, pos.size)
+            # Real realised P&L in TAO: you staked ``close_size`` TAO at
+            # alpha price ``mark_entry`` and unwind at the current alpha
+            # price ``mark``. P&L = close_size * (mark/entry - 1).
+            if close_size > 0 and pos.mark_entry > 0 and mark > 0:
+                realised = close_size * (mark / pos.mark_entry - 1.0)
+                self._record_realised(uid, close_size, mark, realised)
             pos.size = max(0.0, pos.size - prop.amount_tao)
             if pos.size <= 1e-9:
                 self._positions.pop(uid, None)
         # Other actions don't modify our local position book.
+
+    def _record_realised(
+        self, netuid: int, close_size: float, exit_price: float,
+        realised: float,
+    ) -> None:
+        """Write a realised-P&L close row to the same ledger the executor
+        uses, so the dashboard shows a real Gewinn/Verlust. Best-effort:
+        a ledger error must never break the runner loop."""
+        ledger = getattr(self._executor, "_ledger", None)
+        if ledger is None:
+            return
+        try:
+            from tao_swarm.trading.ledger import TradeRecord
+            ledger.record_trade(TradeRecord(
+                strategy=self._strategy.meta().name,
+                action="unstake_realised",
+                target={"netuid": netuid},
+                amount_tao=close_size,
+                price_tao=exit_price,
+                realised_pnl_tao=realised,
+                paper=self._paper,
+                note="live mark: subnet alpha price (TAO)",
+            ))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("realised-P&L record failed (netuid=%d): %s",
+                           netuid, exc)
 
     def _maybe_dump_status(self) -> None:
         """If a status_file was configured, write the current status.
