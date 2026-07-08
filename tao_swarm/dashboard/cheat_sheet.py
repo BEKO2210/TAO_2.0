@@ -61,7 +61,7 @@ def cheat_sheet_groups() -> list[CheatGroup]:
     return [
         CheatGroup(
             title="Erste Schritte",
-            icon="🚀",
+            icon="",
             items=(
                 CheatItem(
                     "tao-swarm version",
@@ -83,7 +83,7 @@ def cheat_sheet_groups() -> list[CheatGroup]:
         ),
         CheatGroup(
             title="Backtest",
-            icon="🧪",
+            icon="",
             items=(
                 CheatItem(
                     "tao-swarm trade backtest "
@@ -105,7 +105,7 @@ def cheat_sheet_groups() -> list[CheatGroup]:
         ),
         CheatGroup(
             title="Paper-Trading (kein Risk)",
-            icon="📝",
+            icon="",
             items=(
                 CheatItem(
                     "tao-swarm --live --network finney trade run "
@@ -135,7 +135,7 @@ def cheat_sheet_groups() -> list[CheatGroup]:
         ),
         CheatGroup(
             title="Keystore (Live-Trading-Vorbereitung)",
-            icon="🔐",
+            icon="",
             items=(
                 CheatItem(
                     "tao-swarm keystore init "
@@ -163,7 +163,7 @@ def cheat_sheet_groups() -> list[CheatGroup]:
         ),
         CheatGroup(
             title="Live-Trading (echtes Geld)",
-            icon="⚠️",
+            icon="",
             items=(
                 CheatItem(
                     "export TAO_LIVE_TRADING=1",
@@ -196,7 +196,7 @@ def cheat_sheet_groups() -> list[CheatGroup]:
         ),
         CheatGroup(
             title="Dashboard + Files",
-            icon="📊",
+            icon="",
             items=(
                 CheatItem(
                     "tao-swarm dashboard",
@@ -220,7 +220,7 @@ def cheat_sheet_groups() -> list[CheatGroup]:
         ),
         CheatGroup(
             title="Eigene Strategie",
-            icon="🧠",
+            icon="",
             items=(
                 CheatItem(
                     "TAO_STRATEGY_PATHS=/path/to/strategies "

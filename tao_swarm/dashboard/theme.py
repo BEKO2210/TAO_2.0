@@ -47,12 +47,15 @@ PALETTE = {
 }
 
 # Semantic status mapping for runner state badges.
+# Second tuple element kept for backwards-compat with callers that
+# unpack ``(cls, glyph)``; glyphs are intentionally empty so the pill
+# renders as clean uppercase text with no emoji / symbol noise.
 STATUS_COLORS = {
-    "running": ("success", "✓"),
-    "idle":    ("info",    "○"),
-    "halted":  ("danger",  "■"),
-    "error":   ("warning", "!"),
-    "offline": ("muted",   "·"),
+    "running": ("success", ""),
+    "idle":    ("info",    ""),
+    "halted":  ("danger",  ""),
+    "error":   ("warning", ""),
+    "offline": ("muted",   ""),
 }
 
 
@@ -301,9 +304,12 @@ def status_pill(state: str) -> str:
         info = ("muted", "·")
     cls, glyph = info
     label = state.upper() if state else "OFFLINE"
+    glyph_html = (
+        f'<span aria-hidden="true">{glyph}</span> ' if glyph else ""
+    )
     return (
         f'<span class="tao-pill tao-pill-{cls}">'
-        f'<span aria-hidden="true">{glyph}</span> {label}'
+        f'{glyph_html}{label}'
         '</span>'
     )
 

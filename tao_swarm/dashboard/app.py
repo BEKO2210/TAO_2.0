@@ -69,84 +69,54 @@ except ImportError:
 
 st.set_page_config(
     page_title="TAO Swarm Dashboard",
-    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ── Dark mode CSS ─────────────────────────────────────────────────────────
-
-# ── Premium theme injection (PR 2P) ───────────────────────────────────────
-# Loaded after page_config so the CSS reaches the rendered DOM. Falls back
-# silently when streamlit is missing (the helpers in theme.py are pure HTML
-# strings; their unit tests don't need streamlit).
+# ── Theme ─────────────────────────────────────────────────────────────────
+#
+# All base styling (canvas, typography, metrics, tabs, sidebar, pills,
+# hero blocks, banners) lives in ``theme.py`` as a single source of
+# truth. It is injected once here, right after ``page_config`` so the
+# CSS reaches the rendered DOM. We deliberately do NOT ship a second,
+# competing stylesheet — the only thing added below is the small set of
+# inline status-badge classes that ``render_badge`` emits and the theme
+# doesn't define.
 try:
+    from tao_swarm.dashboard.theme import PALETTE
     from tao_swarm.dashboard.theme import inject as _inject_theme
     if STREAMLIT_AVAILABLE:
         _inject_theme(st)
 except Exception:  # pragma: no cover - defensive
-    pass
+    PALETTE = {
+        "bg": "#0b1220", "bg_card": "#121a2c", "text": "#e6edf3",
+        "text_muted": "#9ba6b8", "border_lo": "#1f2942",
+        "success": "#3fb950", "warning": "#d29922", "danger": "#f85149",
+        "info": "#58a6ff",
+    }
 
-DARK_CSS = """
+# Inline status-badge classes (used by ``render_badge``). Colours are
+# pulled from the shared PALETTE so they can never drift from the theme.
+BADGE_CSS = f"""
 <style>
-    .stApp {
-        background-color: #0d1117;
-        color: #c9d1d9;
-    }
-    .css-1d391kg, .css-18e3th9 {
-        background-color: #161b22;
-    }
-    .stMetric {
-        background-color: #21262d;
-        border-radius: 8px;
-        padding: 10px;
-    }
-    .stMetric label {
-        color: #8b949e !important;
-    }
-    .stMetric .css-1xarl3l {
-        color: #58a6ff !important;
-    }
-    div[data-testid="stBlock"] {
-        background-color: #161b22;
-        border-radius: 8px;
-        padding: 10px;
-        margin: 5px 0;
-    }
-    h1, h2, h3 {
-        color: #f0f6fc !important;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        background-color: #21262d;
-        border-radius: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        color: #c9d1d9;
-    }
-    .stTabs [aria-selected="true"] {
-        color: #58a6ff !important;
-    }
-    div[data-baseweb="select"] {
-        background-color: #21262d;
-    }
-    .stAlert {
-        border-radius: 8px;
-    }
-    .css-1xar8zy {
-        background-color: #21262d;
-        border: 1px solid #30363d;
-    }
-    /* Status badges */
-    .badge-ready { color: #3fb950; font-weight: bold; }
-    .badge-partial { color: #d29922; font-weight: bold; }
-    .badge-not-ready { color: #f85149; font-weight: bold; }
-    .badge-low { color: #3fb950; font-weight: bold; }
-    .badge-medium { color: #d29922; font-weight: bold; }
-    .badge-high { color: #f85149; font-weight: bold; }
-    .badge-critical { color: #ff0000; font-weight: bold; }
+    .badge-ready, .badge-low        {{ color: {PALETTE['success']}; font-weight: 600; }}
+    .badge-partial, .badge-medium   {{ color: {PALETTE['warning']}; font-weight: 600; }}
+    .badge-not-ready, .badge-not_ready,
+    .badge-high                     {{ color: {PALETTE['danger']};  font-weight: 600; }}
+    .badge-critical                 {{ color: {PALETTE['danger']};  font-weight: 700; }}
 </style>
 """
-st.markdown(DARK_CSS, unsafe_allow_html=True)
+st.markdown(BADGE_CSS, unsafe_allow_html=True)
+
+# Chart palette derived from the theme so plotly figures match the
+# surrounding UI instead of the old GitHub-dark colours.
+CHART = {
+    "paper_bg": PALETTE["bg_card"],
+    "plot_bg": PALETTE["bg"],
+    "font": PALETTE["text"],
+    "grid": PALETTE["border_lo"],
+    "line": PALETTE["info"],
+}
 
 # ── Constants ─────────────────────────────────────────────────────────────
 
@@ -188,17 +158,6 @@ DB_FILES = {
     "scores": DATA_DIR / "scores.db",
     "subnet_meta": DATA_DIR / "subnet_metadata.db",
 }
-
-SIDEBAR_PAGES = [
-    "System Status",
-    "Subnet Scores",
-    "Wallet Watch",
-    "Market Watch",
-    "Risk Alerts",
-    "Trading",
-    "Run Logs",
-]
-
 
 # ── Helper functions ──────────────────────────────────────────────────────
 
@@ -273,17 +232,37 @@ def fetch_watched_wallets() -> list:
 
 @st.cache_data(ttl=120)
 def fetch_market_price() -> dict:
-    """Fetch cached market price."""
+    """Fetch cached market price.
+
+    The collector stores two different shapes depending on the source:
+    the LIVE (CoinGecko) path writes flat keys (``price_usd`` …), while
+    the MOCK fixture writes a nested CoinGecko-style ``{"bittensor":
+    {"usd": …}}`` block. Normalise both to the flat keys the renderer
+    reads so the page never shows N/A when data actually exists.
+    """
     conn = get_db_connection("market")
     if not conn:
         return {}
     rows = safe_query(conn, "SELECT data, cached_at FROM price_cache ORDER BY cached_at DESC LIMIT 1")
     conn.close()
-    if rows:
-        data = json.loads(rows[0][0])
-        data["cached_at"] = rows[0][1]
-        return data
-    return {}
+    if not rows:
+        return {}
+
+    data = json.loads(rows[0][0])
+
+    # Nested CoinGecko shape (mock fixture) -> add flat keys on top so
+    # the renderer finds them, while leaving the original nested block
+    # intact for any caller that reads it directly.
+    if "price_usd" not in data and isinstance(data.get("bittensor"), dict):
+        b = data["bittensor"]
+        data.setdefault("price_usd", b.get("usd", 0.0))
+        data.setdefault("price_btc", b.get("btc", 0.0))
+        data.setdefault("market_cap_usd", b.get("usd_market_cap", 0.0))
+        data.setdefault("volume_24h_usd", b.get("usd_24h_vol", 0.0))
+        data.setdefault("change_24h_pct", b.get("usd_24h_change", 0.0))
+
+    data["cached_at"] = rows[0][1]
+    return data
 
 
 @st.cache_data(ttl=300)
@@ -392,11 +371,11 @@ def render_subnet_scores():
             text="score",
         )
         fig.update_layout(
-            paper_bgcolor="#161b22",
-            plot_bgcolor="#0d1117",
-            font_color="#c9d1d9",
-            xaxis=dict(gridcolor="#30363d"),
-            yaxis=dict(gridcolor="#30363d", range=[0, 105]),
+            paper_bgcolor=CHART["paper_bg"],
+            plot_bgcolor=CHART["plot_bg"],
+            font_color=CHART["font"],
+            xaxis=dict(gridcolor=CHART["grid"]),
+            yaxis=dict(gridcolor=CHART["grid"], range=[0, 105]),
             height=400,
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -482,7 +461,7 @@ def render_market_watch():
             y=df_hist["price_usd"],
             mode="lines",
             name="TAO/USD",
-            line=dict(color="#58a6ff", width=2),
+            line=dict(color=CHART["line"], width=2),
             fill="tozeroy",
             fillcolor="rgba(88, 166, 255, 0.1)",
         ))
@@ -495,12 +474,12 @@ def render_market_watch():
         ))
 
         fig.update_layout(
-            paper_bgcolor="#161b22",
-            plot_bgcolor="#0d1117",
-            font_color="#c9d1d9",
-            xaxis=dict(gridcolor="#30363d"),
-            yaxis=dict(gridcolor="#30363d", title="Price (USD)"),
-            yaxis2=dict(gridcolor="#30363d", title="Volume", overlaying="y", side="right"),
+            paper_bgcolor=CHART["paper_bg"],
+            plot_bgcolor=CHART["plot_bg"],
+            font_color=CHART["font"],
+            xaxis=dict(gridcolor=CHART["grid"]),
+            yaxis=dict(gridcolor=CHART["grid"], title="Price (USD)"),
+            yaxis2=dict(gridcolor=CHART["grid"], title="Volume", overlaying="y", side="right"),
             showlegend=True,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             height=500,
@@ -676,7 +655,7 @@ def render_trading():
                 halt_runner_via_killswitch(
                     kill_path, reason="dashboard halt button",
                 )
-                st.toast("Kill switch triggered", icon="⛔")
+                st.toast("Kill switch triggered")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Failed to write kill switch: {exc}")
@@ -980,12 +959,122 @@ def render_run_logs():
     st.dataframe(pd.DataFrame(activity), use_container_width=True, hide_index=True)
 
 
+def render_overview():
+    """Simple, plain-language landing page.
+
+    One screen, big numbers, traffic-light status. This is the front
+    door for someone who just wants to know: is the bot running, is it
+    paper or real, and how is it doing — without wading through the
+    detailed panels on the other pages.
+    """
+    from tao_swarm.dashboard.theme import banner, hero_block, status_pill
+    from tao_swarm.dashboard.trading_view import (
+        equity_curve,
+        load_runner_status,
+        runner_health_label,
+        summarise_ledger,
+    )
+    from tao_swarm.trading import PaperLedger
+
+    data_dir = Path(os.environ.get("TAO_DATA_DIR", "data"))
+    status_path = Path(os.environ.get(
+        "TAO_RUNNER_STATUS_FILE", data_dir / "runner_status.json",
+    ))
+    status = load_runner_status(status_path)
+    label, _ = runner_health_label(status)
+
+    st.header("Übersicht")
+
+    # ---- Big status line: running? paper or real? --------------------
+    is_running = bool(status) and (status.get("state") == "running")
+    is_paper = not status or status.get("paper", True)
+
+    headline = "Bot läuft" if is_running else "Bot gestoppt"
+    st.markdown(
+        f"<div style='font-size:2rem;font-weight:700;margin:0.2rem 0;'>"
+        f"{headline}</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(status_pill(label), unsafe_allow_html=True)
+
+    if is_paper:
+        st.markdown(
+            banner("info",
+                   "<b>Übungs-Modus (Paper).</b> Es wird nur simuliert — "
+                   "kein echtes Geld, keine echten Trades."),
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            banner("danger",
+                   "<b>ECHT-Modus (Live).</b> Es wird mit echtem TAO "
+                   "gehandelt."),
+            unsafe_allow_html=True,
+        )
+
+    # ---- Three big numbers everyone understands ----------------------
+    ticks = int(status.get("ticks", 0)) if status else 0
+    trades = int(status.get("executed", 0)) if status else 0
+
+    ledger_path = Path(os.environ.get("TAO_LEDGER_DB", data_dir / "trades.db"))
+    pnl = 0.0
+    all_trades = []
+    if ledger_path.exists():
+        ledger = PaperLedger(str(ledger_path))
+        summary = summarise_ledger(ledger, limit=5000)
+        pnl = summary.as_dict().get("realised_pnl_tao", 0.0)
+        all_trades = list(ledger.list_trades(limit=5000))
+        trades = max(trades, summary.as_dict().get("total_trades", 0))
+
+    pnl_word = "Gewinn" if pnl > 0 else "Verlust" if pnl < 0 else "Ergebnis"
+    st.markdown(hero_block([
+        ("Prüfungen", f"{ticks:,}".replace(",", "."), "Marktchecks"),
+        ("Trades", f"{trades:,}".replace(",", "."), "insgesamt"),
+        (pnl_word, f"{pnl:+,.2f}".replace(",", "."), "TAO (simuliert)"),
+    ]), unsafe_allow_html=True)
+
+    # ---- One simple chart --------------------------------------------
+    curve = equity_curve(all_trades) if all_trades else []
+    st.subheader("Verlauf")
+    if curve:
+        eq_df = pd.DataFrame([
+            {
+                "Zeit": pd.to_datetime(p.timestamp, unit="s", utc=True),
+                "Gewinn/Verlust (TAO)": p.cumulative_pnl_tao,
+            }
+            for p in curve
+        ]).set_index("Zeit")
+        st.line_chart(eq_df, height=280, use_container_width=True)
+    else:
+        st.info(
+            "Noch keine abgeschlossenen Trades. Sobald der Bot kauft und "
+            "wieder verkauft, erscheint hier die Gewinn-Kurve."
+        )
+
+    # ---- Plain-language explainer ------------------------------------
+    with st.expander("Was bedeutet das?"):
+        st.markdown(
+            "- **Prüfungen** — wie oft der Bot den Markt angeschaut hat.\n"
+            "- **Trades** — wie oft er (simuliert) gekauft/verkauft hat.\n"
+            "- **Gewinn/Verlust** — Summe aller abgeschlossenen Trades, "
+            "in TAO. Im Übungs-Modus ist das nur eine Simulation.\n"
+            "- **Ampel oben** — grün = läuft, rot = gestoppt.\n\n"
+            "Mehr Details findest du über die Auswahl links "
+            "(Trading, Markt, Subnetze …)."
+        )
+
+    st.caption(
+        "Übungs-Modus ist Standard. Es kann kein echtes Geld bewegt "
+        "werden, solange nicht ausdrücklich der Echt-Modus aktiviert wird."
+    )
+
+
 # ── Main ──────────────────────────────────────────────────────────────────
 
 def main():
     """Main entry point for the Streamlit dashboard."""
-    st.title("TAO Swarm Dashboard")
-    st.caption("Bittensor Multi-Agent Intelligence System — Read-Only Dashboard")
+    st.title("TAO Bot")
+    st.caption("Einfaches Dashboard · Übungs-Modus · nur Ansicht")
 
     # Sidebar navigation
     with st.sidebar:
@@ -999,75 +1088,77 @@ def main():
             runner_health_label,
         )
 
-        st.markdown("### 🧭 Navigation")
-        page = st.radio("Select page:", SIDEBAR_PAGES, label_visibility="collapsed")
+        # 1) Navigation — plain German labels, simple page first.
+        # ``pages`` maps the label the operator sees to the renderer.
+        pages = [
+            ("Übersicht", render_overview),
+            ("Trading", render_trading),
+            ("Markt", render_market_watch),
+            ("Subnetze", render_subnet_scores),
+            ("Risiko", render_risk_alerts),
+            ("Wallet", render_wallet_watch),
+            ("System", render_system_status),
+            ("Verlauf", render_run_logs),
+        ]
+        st.markdown("### Menü")
+        st.caption("Einfach starten mit **Übersicht**.")
+        choice = st.radio(
+            "Seite wählen:",
+            [label for label, _ in pages],
+            label_visibility="collapsed",
+        )
 
         st.divider()
 
-        # Always-visible runner status (PR 2P) — operator sees from
-        # any page whether the runner is alive / halted / errored.
+        # 2) Runner status — always-visible health read-out so the
+        # operator knows from any page whether the runner is alive /
+        # halted / errored.
         data_dir = Path(os.environ.get("TAO_DATA_DIR", "data"))
         status_path = Path(os.environ.get(
             "TAO_RUNNER_STATUS_FILE", data_dir / "runner_status.json",
         ))
         runner_status = load_runner_status(status_path)
-        st.markdown("### 🎛️ Runner")
+        st.markdown("### Bot-Status")
         label, _ = runner_health_label(runner_status)
         st.markdown(status_pill(label), unsafe_allow_html=True)
         if runner_status:
             ticks = int(runner_status.get("ticks", 0))
             executed = int(runner_status.get("executed", 0))
-            st.caption(
-                f"strategy={runner_status.get('strategy', '—')} · "
-                f"ticks={ticks} · executed={executed}"
-            )
+            st.caption(f"{ticks} Prüfungen · {executed} Trades")
         else:
-            st.caption("No runner_status.json found yet.")
+            st.caption("Bot noch nicht gestartet.")
 
         st.divider()
 
-        # "Wie rede ich mit dem System" cheat-sheet (PR 2P).
-        st.markdown("### 💬 Commands")
-        st.markdown(how_to_interact_html(), unsafe_allow_html=True)
+        # 3) The one button most people need.
+        if st.button("Aktualisieren", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
-        for group in cheat_sheet_groups():
-            with st.expander(f"{group.icon} {group.title}", expanded=False):
+        st.divider()
+
+        # 4) Everything advanced — all command help tucked behind a
+        # single collapsed expander so the sidebar stays calm.
+        with st.expander("Befehle (für Fortgeschrittene)", expanded=False):
+            st.markdown(how_to_interact_html(), unsafe_allow_html=True)
+            for group in cheat_sheet_groups():
+                st.markdown(f"**{group.title}**")
                 for item in group.items:
                     st.code(item.command, language="bash")
                     st.caption(item.description)
                 if group.note:
                     st.info(group.note)
 
-        st.divider()
-
-        st.markdown("### ⚡ Quick Actions")
-        if st.button("🔄 Refresh Data", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-
-        st.divider()
         st.markdown(
-            "<div style='color:#9ba6b8;font-size:0.78rem;'>"
-            "<b>TAO Swarm v1.0.0</b><br>Local-only · No telemetry · "
-            "Read-only by default</div>",
+            f"<div style='color:{PALETTE['text_muted']};font-size:0.78rem;'>"
+            "<b>TAO Bot v1.0</b><br>Lokal · keine Telemetrie · "
+            "nur Ansicht</div>",
             unsafe_allow_html=True,
         )
 
-    # Route to page
-    if page == "System Status":
-        render_system_status()
-    elif page == "Subnet Scores":
-        render_subnet_scores()
-    elif page == "Wallet Watch":
-        render_wallet_watch()
-    elif page == "Market Watch":
-        render_market_watch()
-    elif page == "Risk Alerts":
-        render_risk_alerts()
-    elif page == "Trading":
-        render_trading()
-    elif page == "Run Logs":
-        render_run_logs()
+    # Route to the chosen page via the label -> renderer mapping.
+    renderer = dict(pages).get(choice, render_overview)
+    renderer()
 
 
 if __name__ == "__main__":

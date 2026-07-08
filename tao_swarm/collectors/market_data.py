@@ -96,13 +96,17 @@ class MarketDataCollector(BaseCollector):
                     cached_at REAL NOT NULL
                 )
             """)
+            # Keyed by ``days`` only, matching the generic ``_cache_set``
+            # (which writes a single key column). The coin id is carried
+            # inside the JSON payload. A composite (coin_id, days) key
+            # here broke caching: ``_cache_set`` never wrote coin_id, so
+            # every historical fetch hit a NOT NULL constraint and the
+            # dashboard price chart stayed permanently empty.
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS historical_cache (
-                    coin_id TEXT NOT NULL,
-                    days INTEGER NOT NULL,
+                    days INTEGER PRIMARY KEY,
                     data TEXT NOT NULL,
-                    cached_at REAL NOT NULL,
-                    PRIMARY KEY (coin_id, days)
+                    cached_at REAL NOT NULL
                 )
             """)
             conn.commit()
