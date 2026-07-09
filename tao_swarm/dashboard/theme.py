@@ -66,8 +66,46 @@ STATUS_COLORS = {
 PREMIUM_CSS = f"""
 <style>
 /* --- Reset Streamlit chrome we don't need --- */
-#MainMenu, footer, header[data-testid="stHeader"] {{ visibility: hidden; }}
-[data-testid="stToolbar"] {{ display: none !important; }}
+/* Hide the hamburger menu, footer and toolbar — but NOT the header
+   itself: the sidebar collapse/expand arrow lives in the header, so
+   hiding it would make a collapsed sidebar impossible to reopen. Keep
+   the header transparent instead, and force the sidebar controls to
+   stay visible. */
+#MainMenu, footer {{ visibility: hidden; }}
+/* Hide the toolbar's ACTIONS (deploy button, hamburger menu) but NOT
+   the toolbar itself — the sidebar expand (») button lives inside the
+   toolbar, so ``display:none`` on the whole toolbar would make a
+   collapsed sidebar impossible to reopen. */
+[data-testid="stToolbarActions"],
+[data-testid="stAppDeployButton"],
+[data-testid="stMainMenu"] {{ display: none !important; }}
+header[data-testid="stHeader"] {{ background: transparent !important; }}
+/* Keep the sidebar collapse («) and, crucially, the EXPAND (») button
+   visible at all times. Streamlit names the reopen control
+   ``stExpandSidebarButton``. It lives inside the (chrome-reset) header
+   whose height collapses to 0, which clips the button — so a collapsed
+   sidebar could never be reopened. Pin the expand button to the
+   top-left with position:fixed so it escapes the collapsed header flow,
+   and force it + its icon fully visible. */
+[data-testid="stExpandSidebarButton"] {{
+    position: fixed !important;
+    top: 0.5rem !important;
+    left: 0.5rem !important;
+    visibility: visible !important;
+    display: inline-flex !important;
+    opacity: 1 !important;
+    z-index: 999999 !important;
+}}
+[data-testid="stExpandSidebarButton"] button,
+[data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {{
+    visibility: visible !important;
+    display: inline-flex !important;
+    opacity: 1 !important;
+}}
+[data-testid="stSidebarCollapseButton"] {{
+    visibility: visible !important;
+    opacity: 1 !important;
+}}
 
 /* --- Typography --- */
 html, body, [class*="css"] {{

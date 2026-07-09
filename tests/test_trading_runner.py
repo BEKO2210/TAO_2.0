@@ -572,3 +572,83 @@ def test_runner_no_realised_row_when_price_flat(tmp_path):
     # dashboard flips from "not computed" to a real (zero) number.
     assert len(closes) == 1
     assert closes[0].realised_pnl_tao == pytest.approx(0.0, abs=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# TradingRunner — risk exits (stop-loss / take-profit / trailing stop)
+# ---------------------------------------------------------------------------
+
+def _closes(ledger):
+    return [t for t in ledger.list_trades(limit=50)
+            if t.action == "unstake_realised"]
+
+
+def test_runner_stop_loss_closes_losing_position(tmp_path):
+    ex, ledger = _build_executor(tmp_path)
+    strat = _ScriptedStrategy([[_priced_proposal("stake", 4, 2.0)]])
+    runner = TradingRunner(
+        strategy=strat, executor=ex,
+        snapshot_fn=_snapshot_seq([0.05, 0.045]),  # -10%
+        stop_loss_pct=0.05,
+    )
+    runner.tick()   # open @ 0.05
+    runner.tick()   # price -10% → stop-loss fires
+    c = _closes(ledger)
+    assert len(c) == 1
+    assert c[0].realised_pnl_tao == pytest.approx(2.0 * (0.045 / 0.05 - 1))
+    assert 4 not in runner.status().open_positions
+
+
+def test_runner_take_profit_banks_winner(tmp_path):
+    ex, ledger = _build_executor(tmp_path)
+    strat = _ScriptedStrategy([[_priced_proposal("stake", 4, 2.0)]])
+    runner = TradingRunner(
+        strategy=strat, executor=ex,
+        snapshot_fn=_snapshot_seq([0.05, 0.056]),  # +12%
+        take_profit_pct=0.10,
+    )
+    runner.tick()
+    runner.tick()
+    c = _closes(ledger)
+    assert len(c) == 1
+    assert c[0].realised_pnl_tao == pytest.approx(2.0 * (0.056 / 0.05 - 1))
+
+
+def test_runner_trailing_stop_locks_gain_after_pullback(tmp_path):
+    ex, ledger = _build_executor(tmp_path)
+    strat = _ScriptedStrategy([[_priced_proposal("stake", 4, 2.0)]])
+    runner = TradingRunner(
+        strategy=strat, executor=ex,
+        # up to 0.06 (peak), then pull back to 0.057 (>3% below peak)
+        snapshot_fn=_snapshot_seq([0.05, 0.06, 0.057]),
+        trailing_stop_pct=0.03,
+    )
+    runner.tick()   # open @ 0.05
+    runner.tick()   # 0.06 → peak, still held
+    assert 4 in runner.status().open_positions
+    runner.tick()   # 0.057 ≤ peak*(1-0.03)=0.0582 → trailing exit
+    c = _closes(ledger)
+    assert len(c) == 1
+    # exit at 0.057 → still a locked-in gain vs 0.05 entry
+    assert c[0].realised_pnl_tao == pytest.approx(2.0 * (0.057 / 0.05 - 1))
+    assert c[0].realised_pnl_tao > 0
+
+
+def test_runner_no_risk_exit_when_disabled(tmp_path):
+    ex, ledger = _build_executor(tmp_path)
+    strat = _ScriptedStrategy([[_priced_proposal("stake", 4, 2.0)]])
+    runner = TradingRunner(
+        strategy=strat, executor=ex,
+        snapshot_fn=_snapshot_seq([0.05, 0.03]),  # -40% but no SL set
+    )
+    runner.tick()
+    runner.tick()
+    assert _closes(ledger) == []
+    assert runner.status().open_positions[4]["size"] == pytest.approx(2.0)
+
+
+def test_runner_rejects_bad_risk_pct(tmp_path):
+    ex, _ = _build_executor(tmp_path)
+    with pytest.raises(ValueError):
+        TradingRunner(strategy=_ScriptedStrategy(), executor=ex,
+                      snapshot_fn=lambda: [], stop_loss_pct=1.5)

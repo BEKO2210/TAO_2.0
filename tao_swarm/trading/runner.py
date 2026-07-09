@@ -45,7 +45,7 @@ from tao_swarm.trading.reconcile import (
     ChainPositionReader,
     aggregate_by_netuid,
 )
-from tao_swarm.trading.strategy_base import Strategy
+from tao_swarm.trading.strategy_base import Strategy, TradeProposal
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,10 @@ class _Position:
     # adaptive weighting can actually adapt. Empty → fall back to the
     # runner strategy's own name.
     base: str = ""
+    # Highest alpha price (in TAO) seen since the position opened. Drives
+    # the trailing stop — the exit trails this peak by ``trailing_stop_pct``
+    # so a winner keeps running but its gains are protected.
+    peak: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -259,11 +263,21 @@ class TradingRunner:
         auto_reconcile: bool = True,
         status_file: str | Path | None = None,
         council: TradingCouncil | None = None,
+        stop_loss_pct: float | None = None,
+        take_profit_pct: float | None = None,
+        trailing_stop_pct: float | None = None,
     ) -> None:
         if tick_interval_s <= 0:
             raise ValueError("tick_interval_s must be > 0")
         if max_consecutive_errors <= 0:
             raise ValueError("max_consecutive_errors must be > 0")
+        for _nm, _v in (
+            ("stop_loss_pct", stop_loss_pct),
+            ("take_profit_pct", take_profit_pct),
+            ("trailing_stop_pct", trailing_stop_pct),
+        ):
+            if _v is not None and not 0.0 < _v < 1.0:
+                raise ValueError(f"{_nm} must be in (0, 1) when set, got {_v}")
         if (chain_reader is None) != (reconcile_coldkey_ss58 is None):
             raise ValueError(
                 "chain_reader and reconcile_coldkey_ss58 must be set together "
@@ -287,6 +301,11 @@ class TradingRunner:
         self._council_skipped_ticks = 0
         self._last_council_decision: dict[str, Any] | None = None
         self._last_council_skip_ts: float | None = None
+
+        self._stop_loss = stop_loss_pct
+        self._take_profit = take_profit_pct
+        self._trailing_stop = trailing_stop_pct
+        self._risk_exits = 0
 
         self._positions: dict[int, _Position] = {}
         self._tick_prices: dict[int, float] = {}
@@ -505,7 +524,12 @@ class TradingRunner:
                     self._tick_prices[int(uid)] = float(sub.get("price", 0) or 0)
                 except (TypeError, ValueError):
                     continue
-            proposals = self._strategy.evaluate(market_state)
+            # Risk-management overlay: update trailing peaks and emit
+            # stop-loss / take-profit / trailing-stop exits BEFORE the
+            # strategy runs, so protective closes always get priority.
+            risk_exits = self._risk_exit_proposals()
+            strategy_proposals = self._strategy.evaluate(market_state)
+            proposals = risk_exits + strategy_proposals
         except Exception as exc:
             self._record_error(f"strategy.evaluate failed: {exc!r}")
             return []
@@ -581,6 +605,60 @@ class TradingRunner:
                 slept += step
 
     # ---- internals ----
+
+    def _risk_exit_proposals(self) -> list[TradeProposal]:
+        """Protective exits — stop-loss, take-profit, trailing stop.
+
+        Runs every tick over the open positions using the current alpha
+        price. Returns full-size ``unstake`` proposals for positions that
+        breach a configured threshold. Peaks are updated for every open
+        position (so the trailing stop keeps working) even when nothing
+        exits. No thresholds configured → no-op.
+
+        Thresholds (all fractions, e.g. ``0.03`` = 3%):
+          - stop_loss:     exit when return <= -stop_loss (cap the loss)
+          - take_profit:   exit when return >= +take_profit (bank a win)
+          - trailing_stop: once in profit, exit when the price falls
+            ``trailing_stop`` below its peak (let winners run, lock gains)
+        """
+        if not (self._stop_loss or self._take_profit or self._trailing_stop):
+            return []
+        exits: list[TradeProposal] = []
+        for uid, pos in list(self._positions.items()):
+            p = self._tick_prices.get(uid, 0.0)
+            if p <= 0 or pos.mark_entry <= 0 or pos.size <= 0:
+                continue
+            if pos.peak <= 0:
+                pos.peak = pos.mark_entry
+            if p > pos.peak:
+                pos.peak = p
+            ret = p / pos.mark_entry - 1.0
+            reason = None
+            if self._stop_loss is not None and ret <= -self._stop_loss:
+                reason = f"stop-loss {ret * 100:+.2f}%"
+            elif self._take_profit is not None and ret >= self._take_profit:
+                reason = f"take-profit {ret * 100:+.2f}%"
+            elif (
+                self._trailing_stop is not None
+                and pos.peak > pos.mark_entry  # only trail once in profit
+                and p <= pos.peak * (1.0 - self._trailing_stop)
+            ):
+                reason = (
+                    f"trailing-stop {ret * 100:+.2f}% "
+                    f"(peak {(pos.peak / pos.mark_entry - 1) * 100:+.2f}%)"
+                )
+            if reason is None:
+                continue
+            self._risk_exits += 1
+            exits.append(TradeProposal(
+                action="unstake",
+                target={"netuid": uid, "_base_strategy": pos.base},
+                amount_tao=pos.size,
+                price_tao=p,
+                confidence=1.0,
+                reasoning=f"[risk-exit {reason}]",
+            ))
+        return exits
 
     def _post_execute(self, prop: Any, result: ExecResult) -> None:
         """Update counters + position book based on a single result."""

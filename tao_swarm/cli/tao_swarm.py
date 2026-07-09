@@ -1466,6 +1466,21 @@ def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
     "--tick-interval-s", default=60.0, type=float, show_default=True,
 )
 @click.option(
+    "--stop-loss-pct", default=None, type=float,
+    help="Protective exit: close a position when its alpha price falls "
+         "this fraction below entry (e.g. 0.03 = -3%). Off by default.",
+)
+@click.option(
+    "--take-profit-pct", default=None, type=float,
+    help="Protective exit: close a position when its alpha price rises "
+         "this fraction above entry (e.g. 0.06 = +6%). Off by default.",
+)
+@click.option(
+    "--trailing-stop-pct", default=None, type=float,
+    help="Protective exit: once in profit, close when the price falls "
+         "this fraction below its peak (locks gains). Off by default.",
+)
+@click.option(
     "--max-ticks", default=None, type=int,
     help="Stop after this many ticks (default: run until Ctrl-C).",
 )
@@ -1555,7 +1570,8 @@ def _confirm_live_walkthrough(*, strategy_meta, keystore_path, env) -> bool:
 def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
     ctx, strategy_name, ensemble_weight_fn, paper, keystore_path,
     threshold_pct, slot_size_tao, max_position_tao, max_daily_loss_tao,
-    max_total_tao, tick_interval_s, max_ticks, ledger_db, kill_switch_path,
+    max_total_tao, tick_interval_s, stop_loss_pct, take_profit_pct,
+    trailing_stop_pct, max_ticks, ledger_db, kill_switch_path,
     watchlist, reconcile_coldkey, verify_broadcasts, status_file,
     live_trading, yes_i_understand, require_council, council_task,
 ):
@@ -1753,7 +1769,16 @@ def trade_run(  # noqa: C901 - long but linear; readability beats decomposition
         reconcile_coldkey_ss58=reconcile_coldkey,
         status_file=status_file,
         council=council,
+        stop_loss_pct=stop_loss_pct,
+        take_profit_pct=take_profit_pct,
+        trailing_stop_pct=trailing_stop_pct,
     )
+    if stop_loss_pct or take_profit_pct or trailing_stop_pct:
+        click.echo(click.style(
+            f"  Risk exits: stop-loss={stop_loss_pct} "
+            f"take-profit={take_profit_pct} trailing={trailing_stop_pct}",
+            fg="cyan",
+        ))
 
     click.echo(click.style(
         f"\n  Starting runner — strategy={strategy_name}, paper={paper}, "
