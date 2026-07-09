@@ -73,6 +73,12 @@ class _Position:
     # strategy reported (often pool depth) and is only used for the
     # position-cap arithmetic.
     mark_entry: float = 0.0
+    # Base strategy that opened this position (from the ensemble's
+    # ``_base_strategy`` tag). The realised close is booked under this
+    # name so the PerformanceTracker sees real per-base results and the
+    # adaptive weighting can actually adapt. Empty → fall back to the
+    # runner strategy's own name.
+    base: str = ""
 
 
 @dataclass(frozen=True)
@@ -604,6 +610,10 @@ class TradingRunner:
         mark = self._tick_prices.get(uid, 0.0)
         pos = self._positions.setdefault(uid, _Position())
         if prop.action == "stake":
+            # Attribute a freshly-opened position to the base strategy
+            # that opened it (stays stable while the position is alive).
+            if pos.size <= 1e-9:
+                pos.base = self._base_of(prop)
             new_size = pos.size + prop.amount_tao
             if new_size > 0:
                 pos.entry = (
@@ -625,15 +635,27 @@ class TradingRunner:
             # price ``mark``. P&L = close_size * (mark/entry - 1).
             if close_size > 0 and pos.mark_entry > 0 and mark > 0:
                 realised = close_size * (mark / pos.mark_entry - 1.0)
-                self._record_realised(uid, close_size, mark, realised)
+                self._record_realised(
+                    uid, close_size, mark, realised, strategy=pos.base,
+                )
             pos.size = max(0.0, pos.size - prop.amount_tao)
             if pos.size <= 1e-9:
                 self._positions.pop(uid, None)
         # Other actions don't modify our local position book.
 
+    @staticmethod
+    def _base_of(prop: Any) -> str:
+        """Base strategy name an ensemble stamped on the proposal, if any."""
+        target = getattr(prop, "target", None)
+        if isinstance(target, dict):
+            base = target.get("_base_strategy")
+            if isinstance(base, str) and base:
+                return base
+        return ""
+
     def _record_realised(
         self, netuid: int, close_size: float, exit_price: float,
-        realised: float,
+        realised: float, strategy: str = "",
     ) -> None:
         """Write a realised-P&L close row to the same ledger the executor
         uses, so the dashboard shows a real Gewinn/Verlust. Best-effort:
@@ -641,10 +663,13 @@ class TradingRunner:
         ledger = getattr(self._executor, "_ledger", None)
         if ledger is None:
             return
+        # Book under the opening base strategy so the PerformanceTracker
+        # sees per-base realised closes and the adaptive weighting works.
+        strat = strategy or self._strategy.meta().name
         try:
             from tao_swarm.trading.ledger import TradeRecord
             ledger.record_trade(TradeRecord(
-                strategy=self._strategy.meta().name,
+                strategy=strat,
                 action="unstake_realised",
                 target={"netuid": netuid},
                 amount_tao=close_size,

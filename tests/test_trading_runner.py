@@ -487,3 +487,88 @@ def test_runner_status_serialisable(tmp_path):
     json.dumps(d)
     assert d["strategy"] == "scripted"
     assert d["ticks"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TradingRunner — realised P&L (subnet alpha price) + base attribution
+# ---------------------------------------------------------------------------
+
+def _priced_proposal(action, netuid, amount, base=None):
+    target = {"netuid": netuid, "name": f"sn{netuid}"}
+    if base is not None:
+        target["_base_strategy"] = base
+    return TradeProposal(
+        action=action, target=target, amount_tao=amount,
+        price_tao=1.0, confidence=0.5, reasoning="t",
+    )
+
+
+def _snapshot_seq(prices):
+    """snapshot_fn returning netuid-4 subnet with a per-tick alpha price."""
+    state = {"i": 0}
+
+    def fn():
+        p = prices[min(state["i"], len(prices) - 1)]
+        state["i"] += 1
+        return [{"netuid": 4, "tao_in": 1000.0, "price": p, "name": "sn4"}]
+
+    return fn
+
+
+def test_runner_records_real_realised_pnl_from_alpha_price(tmp_path):
+    ex, ledger = _build_executor(tmp_path)
+    strat = _ScriptedStrategy([
+        [_priced_proposal("stake", 4, 2.0)],
+        [_priced_proposal("unstake", 4, 2.0)],
+    ])
+    runner = TradingRunner(
+        strategy=strat, executor=ex,
+        snapshot_fn=_snapshot_seq([0.05, 0.06]),
+    )
+    runner.tick()   # stake @ alpha 0.05
+    runner.tick()   # unstake @ alpha 0.06
+    closes = [t for t in ledger.list_trades(limit=50)
+              if t.action == "unstake_realised"]
+    assert len(closes) == 1
+    # 2.0 TAO * (0.06/0.05 - 1) = 0.4
+    assert closes[0].realised_pnl_tao == pytest.approx(0.4, abs=1e-9)
+
+
+def test_runner_realised_close_attributed_to_base_strategy(tmp_path):
+    ex, ledger = _build_executor(tmp_path)
+    strat = _ScriptedStrategy([
+        [_priced_proposal("stake", 4, 2.0, base="momentum_rotation")],
+        [_priced_proposal("unstake", 4, 2.0, base="momentum_rotation")],
+    ])
+    runner = TradingRunner(
+        strategy=strat, executor=ex,
+        snapshot_fn=_snapshot_seq([0.05, 0.055]),
+    )
+    runner.tick()
+    runner.tick()
+    closes = [t for t in ledger.list_trades(limit=50)
+              if t.action == "unstake_realised"]
+    assert len(closes) == 1
+    # Booked under the opening base strategy, not the runner meta name,
+    # so the PerformanceTracker can see per-base results.
+    assert closes[0].strategy == "momentum_rotation"
+
+
+def test_runner_no_realised_row_when_price_flat(tmp_path):
+    ex, ledger = _build_executor(tmp_path)
+    strat = _ScriptedStrategy([
+        [_priced_proposal("stake", 4, 2.0)],
+        [_priced_proposal("unstake", 4, 2.0)],
+    ])
+    runner = TradingRunner(
+        strategy=strat, executor=ex,
+        snapshot_fn=_snapshot_seq([0.05, 0.05]),
+    )
+    runner.tick()
+    runner.tick()
+    closes = [t for t in ledger.list_trades(limit=50)
+              if t.action == "unstake_realised"]
+    # Flat price → realised is exactly 0; a row is still written so the
+    # dashboard flips from "not computed" to a real (zero) number.
+    assert len(closes) == 1
+    assert closes[0].realised_pnl_tao == pytest.approx(0.0, abs=1e-12)
